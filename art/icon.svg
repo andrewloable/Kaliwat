@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Kaliwat family tree icon">
+  <rect width="512" height="512" fill="#f4efe6"/>
+  <g fill="none" stroke="#2b2420" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity="0.28">
+    <path d="M256 142V210M176 250H336M176 250V340M256 250V340M336 250V340M256 210L176 250M256 210L336 250"/>
+  </g>
+  <g fill="#9c5a3c">
+    <circle cx="256" cy="126" r="24"/>
+    <circle cx="176" cy="234" r="24"/>
+    <circle cx="336" cy="234" r="24"/>
+    <circle cx="176" cy="356" r="24"/>
+    <circle cx="256" cy="356" r="24"/>
+    <circle cx="336" cy="356" r="24"/>
+  </g>
+</svg>

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="Kaliwat — Browser-only family tree maker">
+  <rect width="1200" height="630" fill="#f4efe6"/>
+  <g transform="translate(18 75) scale(.9375)">
+    <g fill="none" stroke="#2b2420" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity="0.28">
+      <path d="M256 142V210M176 250H336M176 250V340M256 250V340M336 250V340M256 210L176 250M256 210L336 250"/>
+    </g>
+    <g fill="#9c5a3c">
+      <circle cx="256" cy="126" r="24"/>
+      <circle cx="176" cy="234" r="24"/>
+      <circle cx="336" cy="234" r="24"/>
+      <circle cx="176" cy="356" r="24"/>
+      <circle cx="256" cy="356" r="24"/>
+      <circle cx="336" cy="356" r="24"/>
+    </g>
+  </g>
+  <g font-family="Georgia, &quot;Times New Roman&quot;, serif">
+    <text x="455" y="285" font-size="110" fill="#2b2420">Kaliwat</text>
+    <text x="460" y="365" font-size="40" fill="#6b5f54">Browser-only family tree maker</text>
+    <text x="460" y="425" font-size="30" fill="#9c5a3c">kaliwat.loable.tech</text>
+  </g>
+</svg>

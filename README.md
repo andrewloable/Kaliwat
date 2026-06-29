@@ -2,6 +2,16 @@
 
 Open-source, **browser-only** family tree maker. Angular front end, no backend — your tree data and photos never leave the device unless you export them.
 
+### ▶ [Try the live demo at kaliwat.loable.tech](https://kaliwat.loable.tech/)
+
+No sign-up, no upload — open it and hit **"try a sample tree"** to explore, or import your own `.ged`/`.gdz`.
+
+[![Kaliwat pedigree / tree view](docs/screenshots/tree.png)](https://kaliwat.loable.tech/)
+
+_Searchable people list with the same sample tree:_
+
+[![Kaliwat people list](docs/screenshots/list.png)](https://kaliwat.loable.tech/)
+
 > **Status:** under active development. Import/export, persistence, multiple tree views, editing, and privacy-aware export all work. The full build plan lives in [docs/family-tree-app-plan.md](docs/family-tree-app-plan.md) and remains the source of truth for scope, data model, and milestone order.
 
 ## Features
