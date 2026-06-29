@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "Kaliwat",
+  "project_id": "278fb3c7-8824-44b5-bb2d-a267bf5d8361"
+}
