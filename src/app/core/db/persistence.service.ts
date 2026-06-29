@@ -110,6 +110,16 @@ export class PersistenceService implements OnDestroy {
     await this._db.mediaMeta.bulkPut(media.map((data) => ({ treeId, id: data.id, data })));
   }
 
+  async saveTree(treeId: string, meta: Record<string, unknown> = {}): Promise<void> {
+    await this._db.trees.put({ id: treeId, meta, updatedAt: Date.now() });
+  }
+
+  async loadLatestTreeId(): Promise<string | null> {
+    const records = await this._db.trees.toArray();
+    if (!records.length) return null;
+    return records.sort((a, b) => b.updatedAt - a.updatedAt)[0].id;
+  }
+
   // Raw AST lives in Dexie only — not in signals
   async saveRawAst(treeId: string, nodes: GedcomNode[]): Promise<void> {
     await this._db.rawAst.put({ treeId, id: 'root', nodes });

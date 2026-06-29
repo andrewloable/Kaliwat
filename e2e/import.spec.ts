@@ -13,12 +13,18 @@ test.describe('Import flow', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     // Clear any previous IndexedDB state
-    await page.evaluate(() => {
-      return new Promise<void>((resolve) => {
-        const req = indexedDB.deleteDatabase('kaliwat');
-        req.onsuccess = () => resolve();
-        req.onerror = () => resolve();
+    await page.evaluate(async () => {
+      const db = await new Promise<IDBDatabase | null>(res => {
+        const r = indexedDB.open('kaliwat');
+        r.onsuccess = () => res(r.result); r.onerror = () => res(null);
       });
+      if (!db) return;
+      const stores = [...db.objectStoreNames];
+      if (stores.length) {
+        const tx = db.transaction(stores, 'readwrite');
+        await Promise.all(stores.map(s => new Promise<void>(res => { tx.objectStore(s).clear().onsuccess = () => res(); })));
+      }
+      db.close();
     });
     await page.reload();
   });
