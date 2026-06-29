@@ -13,9 +13,12 @@
   border-bottom: 1px solid var(--line);
   background: var(--paper);
   flex-shrink: 0;
+  overflow-x: auto; // narrow screens: scroll to reach Recenter instead of clipping it
 }
 
 .mode-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
   padding: 0.25rem 0.75rem;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -33,6 +36,8 @@
 
 .recenter-btn {
   margin-left: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
   padding: 0.25rem 0.75rem;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -61,5 +66,17 @@
       stroke: var(--focus) !important;
       stroke-width: 3 !important;
     }
+  }
+}
+
+// Per-card edit (✎) affordance — quiet until hovered/focused.
+.card-edit {
+  cursor: pointer;
+  opacity: 0.5;
+
+  &:hover { opacity: 1; }
+  &:focus-visible {
+    opacity: 1;
+    outline: 2px solid var(--focus);
   }
 }

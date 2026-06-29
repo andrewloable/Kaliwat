@@ -1,5 +1,6 @@
-import { Injectable, OnDestroy } from '@angular/core';
+import { Injectable, OnDestroy, signal, Signal, WritableSignal } from '@angular/core';
 import { db } from '../core/db/kaliwat-db';
+import { makeThumbnail } from '../gedcom/gedzip/gedzip';
 
 /**
  * Manages photo Blobs and their Object URLs.
@@ -10,6 +11,57 @@ import { db } from '../core/db/kaliwat-db';
 @Injectable({ providedIn: 'root' })
 export class MediaService implements OnDestroy {
   private readonly urls = new Map<string, string>(); // mediaId → objectURL
+  private readonly avatarSignals = new Map<string, WritableSignal<string | null>>();
+  private readonly nullAvatar = signal<string | null>(null);
+
+  /**
+   * A person's primary photo as a signal of a local object URL (null until
+   * resolved / when none). Resolution order: cached blob in IndexedDB → fetch
+   * the remote OBJE URL once (CORS-permitting), thumbnail it, store the blob,
+   * then serve from that local blob. The view only ever renders a blob: URL —
+   * never a remote <img> — so display stays offline and within img-src.
+   * Fetch is lazy (on first view), so a 2000-person tree only pulls the photos
+   * actually looked at.
+   */
+  avatar(treeId: string | null | undefined, mediaId: string | undefined): Signal<string | null> {
+    if (!treeId || !mediaId) return this.nullAvatar;
+    const key = `${treeId}|${mediaId}`;
+    let sig = this.avatarSignals.get(key);
+    if (!sig) {
+      sig = signal<string | null>(null);
+      this.avatarSignals.set(key, sig);
+      this.resolveAvatar(treeId, mediaId)
+        .then((url) => sig!.set(url))
+        .catch(() => sig!.set(null));
+    }
+    return sig;
+  }
+
+  private async resolveAvatar(treeId: string, mediaId: string): Promise<string | null> {
+    const cachedRec = await db.mediaBlobs.get([treeId, mediaId]);
+    const cached = cachedRec?.thumb ?? cachedRec?.blob;
+    if (cached) return this.cacheUrl(`thumb:${mediaId}`, cached);
+
+    const meta = await db.mediaMeta.get([treeId, mediaId]);
+    const url = meta?.data?.file;
+    if (!url || !/^https?:\/\//i.test(url)) return null;
+
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const blob = await resp.blob();
+    if (!blob.type.startsWith('image/')) return null;
+    const thumb = await makeThumbnail(blob).catch(() => null);
+    await db.mediaBlobs.put({ treeId, id: mediaId, blob, ...(thumb ? { thumb } : {}) });
+    return this.cacheUrl(`thumb:${mediaId}`, thumb ?? blob);
+  }
+
+  private cacheUrl(key: string, blob: Blob): string {
+    const existing = this.urls.get(key);
+    if (existing) return existing;
+    const url = URL.createObjectURL(blob);
+    this.urls.set(key, url);
+    return url;
+  }
 
   /** Returns an object URL for the full-size photo blob, or null if not found. */
   async getPhotoUrl(treeId: string, mediaId: string): Promise<string | null> {

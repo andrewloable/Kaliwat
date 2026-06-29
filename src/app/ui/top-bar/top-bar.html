@@ -5,7 +5,8 @@
     <svg class="search-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
     </svg>
-    <input class="search-field" type="search" placeholder="Search people" aria-label="Search people" />
+    <input #q class="search-field" type="search" placeholder="Search people" aria-label="Search people"
+      [value]="search.query()" (input)="search.query.set(q.value)" />
   </div>
 
   <nav class="view-tabs" role="tablist" aria-label="View">
@@ -17,5 +18,9 @@
       #treeTab="routerLinkActive" [attr.aria-selected]="treeTab.isActive">Tree</button>
   </nav>
 
-  <button class="import-btn" type="button">Import</button>
+  @if (!store.isEmpty()) {
+    <button class="export-btn" type="button" (click)="export()" title="Download your tree (.gdz with photos, else .ged)">Export</button>
+  }
+  <button class="import-btn" type="button" (click)="importInput.click()">Import</button>
+  <input #importInput type="file" accept=".ged,.gdz" hidden (change)="onImport($event)" aria-label="Import a GEDCOM file" />
 </header>

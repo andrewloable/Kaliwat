@@ -8,11 +8,15 @@ import { TreeStore } from '../../core/tree-store/tree.store';
 import { buildLayout, CARD_W, CARD_H, LayoutNode, LayoutEdge } from '../../layout/pedigree-layout';
 import { buildDagLayout, DagNode, DagEdge } from '../../layout/dag-layout';
 import { Individual } from '../../core/model/types';
+import { MediaService } from '../../media/media.service';
+import { PersonEditorComponent } from '../../ui/person-editor/person-editor';
+import { wrapToLines } from './wrap-text';
 
 export const UNION_R = 14; // union dot radius — keep in sync with dag-layout.ts
 
 @Component({
   selector: 'app-tree-view',
+  imports: [PersonEditorComponent],
   templateUrl: './tree.html',
   styleUrl: './tree.scss',
 })
@@ -21,6 +25,7 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
   @ViewChild('chartLayer') private chartLayerEl!: ElementRef<SVGGElement>;
 
   protected readonly store = inject(TreeStore);
+  protected readonly media = inject(MediaService);
 
   readonly mode = signal<'pedigree' | 'descendants' | 'family'>('pedigree');
   readonly focusId = signal<string | null>(null);
@@ -93,11 +98,34 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
     return `M${e.x1},${e.y1} C${mx},${e.y1} ${mx},${e.y2} ${e.x2},${e.y2}`;
   }
 
+  // Full, untruncated name — used for the card's aria-label.
   displayName(p: Individual): string {
     const n = p.names[0];
     if (!n) return 'Unknown';
-    const full = n.full || [n.given, n.surname].filter(Boolean).join(' ');
-    return full.length > 22 ? full.slice(0, 21) + '…' : (full || 'Unknown');
+    return (n.full || [n.given, n.surname].filter(Boolean).join(' ')) || 'Unknown';
+  }
+
+  // Pixel width of name text at the card's 14px serif, measured via canvas
+  // (accurate per-glyph); falls back to a char estimate where canvas is absent
+  // (unit tests / SSR). Built once.
+  private readonly _measure = (() => {
+    let ctx: CanvasRenderingContext2D | null = null;
+    try {
+      ctx = document.createElement('canvas').getContext('2d');
+      if (ctx) ctx.font = "14px 'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif";
+    } catch {
+      ctx = null;
+    }
+    return (s: string): number => (ctx ? ctx.measureText(s).width : s.length * 7.1);
+  })();
+
+  // text starts at x=64 (after the avatar); leave ~12px right padding.
+  readonly NAME_MAX_W = CARD_W - 64 - 12;
+
+  /** Person name wrapped to fit the card — at most 2 lines, ellipsis if longer. */
+  nameLines(p: Individual): string[] {
+    const lines = wrapToLines(this.displayName(p), this._measure, this.NAME_MAX_W, 2);
+    return lines.length ? lines : ['Unknown'];
   }
 
   initials(p: Individual): string {
@@ -119,6 +147,13 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
 
   personNodes(nodes: DagNode[]): DagNode[] { return nodes.filter(n => n.type === 'person'); }
   unionNodes(nodes: DagNode[]): DagNode[] { return nodes.filter(n => n.type === 'union'); }
+
+  // DESIGN.md: union node is labeled with the marriage year.
+  unionYear(node: DagNode): string {
+    if (!node.unionId) return '';
+    const union = this.store.unions().find(u => u.id === node.unionId);
+    return union?.events.find(e => e.type === 'MARR')?.date?.match(/\d{4}/)?.[0] ?? '';
+  }
 
   readonly CARD_W = CARD_W;
   readonly CARD_H = CARD_H;

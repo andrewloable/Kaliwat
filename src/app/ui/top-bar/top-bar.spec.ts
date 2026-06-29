@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { TopBarComponent } from './top-bar';
+import { SearchService } from '../../core/search/search.service';
 
 describe('TopBarComponent', () => {
   beforeEach(async () => {
@@ -31,5 +32,25 @@ describe('TopBarComponent', () => {
     fixture.detectChanges();
     const btn = fixture.nativeElement.querySelector('.import-btn');
     expect(btn?.textContent?.trim()).toBe('Import');
+  });
+
+  it('writes the search box value into the shared SearchService', () => {
+    const search = TestBed.inject(SearchService);
+    search.query.set('');
+    const fixture = TestBed.createComponent(TopBarComponent);
+    fixture.detectChanges();
+    const input: HTMLInputElement = fixture.nativeElement.querySelector('.search-field');
+    input.value = 'maria';
+    input.dispatchEvent(new Event('input'));
+    expect(search.query()).toBe('maria');
+  });
+
+  it('reflects the SearchService query back into the input', () => {
+    const search = TestBed.inject(SearchService);
+    search.query.set('reyes');
+    const fixture = TestBed.createComponent(TopBarComponent);
+    fixture.detectChanges();
+    const input: HTMLInputElement = fixture.nativeElement.querySelector('.search-field');
+    expect(input.value).toBe('reyes');
   });
 });

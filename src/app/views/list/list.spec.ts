@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { ListComponent } from './list';
 import { TreeStore } from '../../core/tree-store/tree.store';
 import { ImportService } from '../../core/import/import.service';
+import { SearchService } from '../../core/search/search.service';
 import { Individual } from '../../core/model/types';
 
 // Minimal stub — spec only exercises template + computed signals
@@ -26,6 +27,7 @@ function makeIndi(id: string, name: string, birthYear?: string, deathYear?: stri
 
 describe('ListComponent', () => {
   let store: TreeStore;
+  let search: SearchService;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -36,6 +38,8 @@ describe('ListComponent', () => {
       ],
     }).compileComponents();
     store = TestBed.inject(TreeStore);
+    search = TestBed.inject(SearchService);
+    search.query.set('');
   });
 
   it('renders empty-state when store is empty', () => {
@@ -58,7 +62,7 @@ describe('ListComponent', () => {
   it('shows no-results state when search matches nothing', () => {
     const fixture = TestBed.createComponent(ListComponent);
     store.setIndividuals([makeIndi('a', 'Alice Smith', '1900')]);
-    fixture.componentInstance.searchQuery = 'zzznomatch';
+    search.query.set('zzznomatch');
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.no-results')).toBeTruthy();
   });
@@ -69,7 +73,7 @@ describe('ListComponent', () => {
       makeIndi('a', 'Alice Smith'),
       makeIndi('b', 'Bob Jones'),
     ]);
-    fixture.componentInstance.searchQuery = 'alice';
+    search.query.set('alice');
     const filtered = fixture.componentInstance.filtered();
     expect(filtered.length).toBe(1);
     expect(filtered[0].displayName).toContain('Alice');
@@ -78,7 +82,7 @@ describe('ListComponent', () => {
   it('no-results state is visually distinct from empty-tree', () => {
     const fixture = TestBed.createComponent(ListComponent);
     store.setIndividuals([makeIndi('a', 'Alice')]);
-    fixture.componentInstance.searchQuery = 'zzz';
+    search.query.set('zzz');
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.no-results')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('.empty-state')).toBeNull();

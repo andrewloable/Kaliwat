@@ -100,6 +100,38 @@ export function normalizeAst(ast: GedcomNode[]): NormalizeResult {
     return id;
   };
 
+  // Build MediaObjects from top-level OBJE records up front; inline OBJE
+  // (no xref, FILE as a child — MyHeritage's form) are synthesized on demand.
+  const media = new Map<UUID, MediaObject>();
+  for (const node of objeNodes) {
+    if (!node.xref) continue;
+    const id = pt.getUuid(node.xref)!;
+    media.set(id, {
+      id, sourceXref: node.xref,
+      form: childValue(node, 'FORM'),
+      title: childValue(node, 'TITL'),
+      file: childValue(node, 'FILE'),
+      links: [], rawRef: node,
+    });
+  }
+
+  // Resolve a record's child OBJE to a media id — pointer reference OR an
+  // inline OBJE block (synthesize a MediaObject so the photo is linked).
+  const objeId = (o: GedcomNode): UUID | undefined => {
+    if (o.pointer) return resolve(o.pointer);
+    const file = childValue(o, 'FILE') ?? o.value;
+    if (!file) return undefined;
+    const id = crypto_uuid();
+    media.set(id, {
+      id,
+      form: childValue(o, 'FORM'),
+      title: childValue(o, 'TITL'),
+      file,
+      links: [], rawRef: o,
+    });
+    return id;
+  };
+
   // Build Individuals
   const individuals = new Map<UUID, Individual>();
   for (const node of indiNodes) {
@@ -110,7 +142,7 @@ export function normalizeAst(ast: GedcomNode[]): NormalizeResult {
     const sex = childValue(node, 'SEX') ?? 'U';
     const events = node.children.filter((c) => EVENT_TAGS.has(c.tag)).map(parseEvent);
     const mediaIds = childNodes(node, 'OBJE')
-      .map((o) => resolve(o.pointer ?? o.value))
+      .map(objeId)
       .filter((id): id is UUID => id !== undefined);
     const notes = childNodes(node, 'NOTE').map((n) =>
       n.value ?? (n.pointer ? (snoteText.get(n.pointer) ?? '') : ''),
@@ -175,22 +207,6 @@ export function normalizeAst(ast: GedcomNode[]): NormalizeResult {
         childLink.notes = childNodes(famcNode, 'NOTE').map((n) => n.value ?? '');
       }
     }
-  }
-
-  // Build MediaObjects
-  const media = new Map<UUID, MediaObject>();
-  for (const node of objeNodes) {
-    if (!node.xref) continue;
-    const id = pt.getUuid(node.xref)!;
-    media.set(id, {
-      id,
-      sourceXref: node.xref,
-      form: childValue(node, 'FORM'),
-      title: childValue(node, 'TITL'),
-      file: childValue(node, 'FILE'),
-      links: [],
-      rawRef: node,
-    });
   }
 
   const headNode = ast.find((n) => n.tag === 'HEAD');

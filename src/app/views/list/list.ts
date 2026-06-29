@@ -4,19 +4,24 @@ import { ScrollingModule } from '@angular/cdk/scrolling';
 import { TreeStore } from '../../core/tree-store/tree.store';
 import { ImportService } from '../../core/import/import.service';
 import { EditService, PersonFormData } from '../../core/edit/edit.service';
+import { SearchService } from '../../core/search/search.service';
+import { MediaService } from '../../media/media.service';
 import { Individual } from '../../core/model/types';
 
 export interface ListRow {
   id: string;
   displayName: string;
   initials: string;
-  lifespan: string;
+  subtitle: string;
   birthYear: string;
   deathYear: string;
+  sortKey: string;
+  mediaId?: string;
 }
 
 function toRow(indi: Individual): ListRow {
-  const name = indi.names[0]?.full ?? '';
+  const n0 = indi.names[0];
+  const name = n0?.full ?? '';
   const parts = name.trim().split(/\s+/);
   const initials = parts
     .slice(0, 2)
@@ -28,9 +33,12 @@ function toRow(indi: Individual): ListRow {
   const death = indi.events.find((e) => e.type === 'DEAT');
   const birthYear = birth?.date?.match(/\d{4}/)?.[0] ?? '';
   const deathYear = death?.date?.match(/\d{4}/)?.[0] ?? '';
-  const lifespan = birthYear || deathYear ? `${birthYear}–${deathYear}` : '';
+  // Secondary line is a hint (birthplace), not the years — the years already
+  // show right-aligned, so repeating them under the name was pure noise.
+  const subtitle = birth?.place ?? '';
+  const sortKey = `${n0?.surname ?? ''} ${n0?.given ?? name}`.trim().toLowerCase();
 
-  return { id: indi.id, displayName: name || '(no name)', initials, lifespan, birthYear, deathYear };
+  return { id: indi.id, displayName: name || '(no name)', initials, subtitle, birthYear, deathYear, sortKey, mediaId: indi.mediaIds[0] };
 }
 
 function blankForm(): PersonFormData {
@@ -79,7 +87,7 @@ function indi2form(indi: Individual): PersonFormData {
             (dragleave)="isDragOver = false"
             (drop)="onDrop($event)"
           >
-            <p class="drop-prompt">Begin with your family tree</p>
+            <h1 class="drop-prompt">Begin with your family tree</h1>
             <button class="choose-btn" type="button" (click)="triggerPicker()">Choose a file…</button>
             <p class="format-hint">Accepts .ged and .gdz</p>
             <p class="try-sample">or <button class="sample-link" (click)="importSample()">try a sample tree</button></p>
@@ -93,8 +101,10 @@ function indi2form(indi: Individual): PersonFormData {
           </div>
         </div>
       } @else if (filtered().length === 0) {
-        <div class="no-results" role="status">No people match "{{ searchQuery }}"</div>
+        <h1 class="sr-only">People</h1>
+        <div class="no-results" role="status">No people match "{{ search.query() }}"</div>
       } @else {
+        <h1 class="sr-only">People</h1>
         <cdk-virtual-scroll-viewport itemSize="66" class="scroll-viewport">
           <div
             *cdkVirtualFor="let row of filtered(); trackBy: trackById"
@@ -104,10 +114,17 @@ function indi2form(indi: Individual): PersonFormData {
             (click)="openEdit(row.id)"
             (keydown.enter)="openEdit(row.id)"
           >
-            <div class="avatar" aria-hidden="true">{{ row.initials }}</div>
+            @let photo = media.avatar(store.currentTreeId(), row.mediaId)();
+            @if (photo) {
+              <img class="avatar" [src]="photo" alt="" />
+            } @else {
+              <div class="avatar" aria-hidden="true">{{ row.initials }}</div>
+            }
             <div class="row-body">
               <span class="row-name">{{ row.displayName }}</span>
-              <span class="row-hint">{{ row.lifespan }}</span>
+              @if (row.subtitle) {
+                <span class="row-hint">{{ row.subtitle }}</span>
+              }
             </div>
             <span class="row-years" aria-label="Born {{ row.birthYear }} died {{ row.deathYear }}">
               {{ row.birthYear }}<span class="year-sep">–</span>{{ row.deathYear }}
@@ -224,6 +241,7 @@ function indi2form(indi: Individual): PersonFormData {
       font-family: var(--font-serif);
       font-size: 1rem;
       display: flex; align-items: center; justify-content: center;
+      object-fit: cover; overflow: hidden;
     }
 
     .row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -341,10 +359,11 @@ function indi2form(indi: Individual): PersonFormData {
 })
 export class ListComponent {
   readonly store = inject(TreeStore);
+  readonly search = inject(SearchService);
+  readonly media = inject(MediaService);
   private readonly importService = inject(ImportService);
   private readonly editService = inject(EditService);
 
-  searchQuery = '';
   isDragOver = false;
 
   // 'closed' | 'new' | '<uuid>' (editing existing)
@@ -352,9 +371,14 @@ export class ListComponent {
   readonly editError = signal<string | null>(null);
   form: PersonFormData = blankForm();
 
-  readonly rows = computed(() => this.store.individuals().map(toRow));
+  readonly rows = computed(() =>
+    this.store
+      .individuals()
+      .map(toRow)
+      .sort((a, b) => a.sortKey.localeCompare(b.sortKey)),
+  );
   readonly filtered = computed(() => {
-    const q = this.searchQuery.toLowerCase().trim();
+    const q = this.search.query().toLowerCase().trim();
     if (!q) return this.rows();
     return this.rows().filter((r) => r.displayName.toLowerCase().includes(q));
   });

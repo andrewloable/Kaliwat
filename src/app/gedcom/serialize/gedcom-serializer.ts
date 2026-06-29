@@ -14,7 +14,12 @@ function serializeNode(node: GedcomNode): string {
  * are automatically reflected since rawRef is a reference into documentAst.
  */
 export function serializeModel(model: TreeModel): string {
-  return model.documentAst.map(serializeNode).join('');
+  return serializeAst(model.documentAst);
+}
+
+/** Serialize a documentAst (array of top-level GEDCOM nodes) to text. */
+export function serializeAst(nodes: GedcomNode[]): string {
+  return nodes.map(serializeNode).join('');
 }
 
 // ── Test-only mutation helpers ────────────────────────────────────────────────

@@ -27,16 +27,35 @@
               fill="var(--card)"
               [attr.stroke]="node.isFocus ? 'var(--accent)' : 'var(--line)'"
               [attr.stroke-width]="node.isFocus ? 2 : 1"/>
-            <circle cx="33" cy="43" r="21" fill="var(--paper-2)"/>
-            <text x="33" y="43" text-anchor="middle" dominant-baseline="central"
+            @let pPhoto = media.avatar(store.currentTreeId(), node.person.mediaIds[0])();
+            @if (pPhoto) {
+              <clipPath [attr.id]="'av-' + node.id"><circle cx="33" cy="43" r="21"/></clipPath>
+              <image [attr.href]="pPhoto" x="12" y="22" width="42" height="42"
+                [attr.clip-path]="'url(#av-' + node.id + ')'" preserveAspectRatio="xMidYMid slice"/>
+            } @else {
+              <circle cx="33" cy="43" r="21" fill="var(--paper-2)"/>
+              <text x="33" y="43" text-anchor="middle" dominant-baseline="central"
+                font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif"
+                font-size="13" fill="var(--ink-soft)">{{initials(node.person)}}</text>
+            }
+            @let pLines = nameLines(node.person);
+            <text [attr.y]="pLines.length > 1 ? 23 : 33"
               font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif"
-              font-size="13" fill="var(--ink-soft)">{{initials(node.person)}}</text>
-            <text x="64" y="28"
-              font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif"
-              font-size="14" fill="var(--ink)">{{displayName(node.person)}}</text>
-            <text x="64" y="50"
+              font-size="14" fill="var(--ink)">
+              @for (ln of pLines; track $index) {
+                <tspan x="64" [attr.dy]="$index === 0 ? 0 : 15">{{ ln }}</tspan>
+              }
+            </text>
+            <text x="64" [attr.y]="pLines.length > 1 ? 60 : 50"
               font-family="'Avenir Next','Segoe UI',Helvetica,Arial,sans-serif"
               font-size="12" fill="var(--ink-soft)">{{years(node.person)}}</text>
+            <g class="card-edit" role="button" tabindex="0"
+               [attr.aria-label]="'Edit ' + displayName(node.person)"
+               (click)="editor.open(node.person.id); $event.stopPropagation()"
+               (keydown.enter)="editor.open(node.person.id); $event.stopPropagation()">
+              <rect [attr.x]="CARD_W - 32" y="6" width="26" height="20" rx="6" fill="var(--paper-2)"/>
+              <text [attr.x]="CARD_W - 19" y="20" text-anchor="middle" font-size="12" fill="var(--ink-soft)">✎</text>
+            </g>
           </g>
         }
         @if (layout().nodes.length === 0) {
@@ -62,16 +81,35 @@
               fill="var(--card)"
               [attr.stroke]="node.isFocus ? 'var(--accent)' : 'var(--line)'"
               [attr.stroke-width]="node.isFocus ? 2 : 1"/>
-            <circle cx="33" cy="43" r="21" fill="var(--paper-2)"/>
-            <text x="33" y="43" text-anchor="middle" dominant-baseline="central"
+            @let fPhoto = media.avatar(store.currentTreeId(), node.person!.mediaIds[0])();
+            @if (fPhoto) {
+              <clipPath [attr.id]="'av-' + node.id"><circle cx="33" cy="43" r="21"/></clipPath>
+              <image [attr.href]="fPhoto" x="12" y="22" width="42" height="42"
+                [attr.clip-path]="'url(#av-' + node.id + ')'" preserveAspectRatio="xMidYMid slice"/>
+            } @else {
+              <circle cx="33" cy="43" r="21" fill="var(--paper-2)"/>
+              <text x="33" y="43" text-anchor="middle" dominant-baseline="central"
+                font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif"
+                font-size="13" fill="var(--ink-soft)">{{initials(node.person!)}}</text>
+            }
+            @let fLines = nameLines(node.person!);
+            <text [attr.y]="fLines.length > 1 ? 23 : 33"
               font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif"
-              font-size="13" fill="var(--ink-soft)">{{initials(node.person!)}}</text>
-            <text x="64" y="28"
-              font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif"
-              font-size="14" fill="var(--ink)">{{displayName(node.person!)}}</text>
-            <text x="64" y="50"
+              font-size="14" fill="var(--ink)">
+              @for (ln of fLines; track $index) {
+                <tspan x="64" [attr.dy]="$index === 0 ? 0 : 15">{{ ln }}</tspan>
+              }
+            </text>
+            <text x="64" [attr.y]="fLines.length > 1 ? 60 : 50"
               font-family="'Avenir Next','Segoe UI',Helvetica,Arial,sans-serif"
               font-size="12" fill="var(--ink-soft)">{{years(node.person!)}}</text>
+            <g class="card-edit" role="button" tabindex="0"
+               [attr.aria-label]="'Edit ' + displayName(node.person!)"
+               (click)="editor.open(node.person!.id); $event.stopPropagation()"
+               (keydown.enter)="editor.open(node.person!.id); $event.stopPropagation()">
+              <rect [attr.x]="CARD_W - 32" y="6" width="26" height="20" rx="6" fill="var(--paper-2)"/>
+              <text [attr.x]="CARD_W - 19" y="20" text-anchor="middle" font-size="12" fill="var(--ink-soft)">✎</text>
+            </g>
           </g>
         }
         @for (node of unionNodes(dagLayout().nodes); track node.id) {
@@ -82,6 +120,12 @@
           <text [attr.x]="node.x" [attr.y]="node.y"
             text-anchor="middle" dominant-baseline="central"
             font-size="13" fill="var(--accent)" aria-hidden="true">⚭</text>
+          @if (unionYear(node)) {
+            <text [attr.x]="node.x" [attr.y]="node.y + UNION_R + 11"
+              text-anchor="middle"
+              font-family="'Avenir Next','Segoe UI',Helvetica,Arial,sans-serif"
+              font-size="11" fill="var(--ink-soft)" aria-hidden="true">{{ unionYear(node) }}</text>
+          }
         }
         @if (dagLayout().nodes.length === 0) {
           <text x="40" y="60"
@@ -91,4 +135,6 @@
       }
     </g>
   </svg>
+
+  <app-person-editor #editor />
 </div>

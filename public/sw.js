@@ -1,5 +1,9 @@
-// ponytail: hand-rolled SW — no @angular/pwa; versioned cache; offline nav fallback
-const CACHE_NAME = 'kaliwat-shell-v1';
+// ponytail: hand-rolled SW — no @angular/pwa; versioned cache; offline fallback.
+// NETWORK-FIRST: always prefer fresh so a new build/code is never masked by a
+// stale cached bundle (the old cache-first strategy served stale JS forever,
+// which hid shipped fixes until the cache was manually cleared). Cache is only
+// a fallback for offline.
+const CACHE_NAME = 'kaliwat-shell-v2';
 const SHELL_URLS = ['/', '/index.html'];
 
 self.addEventListener('install', (event) => {
@@ -24,35 +28,28 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  // Only handle same-origin requests
+  if (request.method !== 'GET') return;
+  // Only handle same-origin requests; remote photo fetches go straight to the
+  // network (and are cached by the app into IndexedDB, not here).
   if (!request.url.startsWith(self.location.origin)) return;
 
-  if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request)
-        .then((resp) => {
-          const clone = resp.clone();
-          caches.open(CACHE_NAME).then((c) => c.put(request, clone));
-          return resp;
-        })
-        .catch(() =>
-          caches.match('/index.html').then((cached) => cached ?? Response.error()),
-        ),
-    );
-    return;
-  }
-
-  // Cache-first for static assets (JS, CSS, images)
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((resp) => {
+    fetch(request)
+      .then((resp) => {
         if (resp.ok) {
           const clone = resp.clone();
           caches.open(CACHE_NAME).then((c) => c.put(request, clone));
         }
         return resp;
-      });
-    }),
+      })
+      .catch(() =>
+        caches.match(request).then((cached) => {
+          if (cached) return cached;
+          if (request.mode === 'navigate') {
+            return caches.match('/index.html').then((idx) => idx ?? Response.error());
+          }
+          return Response.error();
+        }),
+      ),
   );
 });
