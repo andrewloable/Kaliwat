@@ -18,6 +18,8 @@ export interface LayoutNode {
 
 export interface LayoutEdge {
   id: string;
+  sourceId?: UUID;
+  targetId?: UUID;
   x1: number; y1: number; // right edge of source card, vertical center
   x2: number; y2: number; // left edge of target card, vertical center
 }
@@ -102,11 +104,65 @@ export function buildLayout(
 
   const edges: LayoutEdge[] = pointed.links().map(l => ({
     id: `${l.source.data.id}-${l.target.data.id}`,
+    sourceId: l.source.data.id,
+    targetId: l.target.data.id,
     x1: l.source.y + CARD_W,
     y1: l.source.x - minX + CARD_H / 2,
     x2: l.target.y,
     y2: l.target.x - minX + CARD_H / 2,
   }));
+
+  return { nodes, edges };
+}
+
+/**
+ * Hourglass: the focus's complete tree — every ancestor to the left, every
+ * descendant to the right, the focus in the middle. Built by laying out the
+ * ancestor tree and the descendant tree separately (both rooted at the focus),
+ * mirroring the ancestors to the left, aligning the two focus rows, and
+ * re-deriving each connector left→right from the merged positions.
+ */
+export function buildCompleteLayout(
+  focusId: UUID,
+  individuals: Map<UUID, Individual>,
+  unions: Map<UUID, Union>,
+  maxDepth = 100,
+): LayoutData {
+  const desc = buildLayout(focusId, 'descendants', individuals, unions, maxDepth);
+  const anc = buildLayout(focusId, 'pedigree', individuals, unions, maxDepth);
+  if (desc.nodes.length === 0) return { nodes: [], edges: [] };
+
+  const dFocus = desc.nodes.find(n => n.isFocus)!;
+  const aFocus = anc.nodes.find(n => n.isFocus)!;
+  const dy = dFocus.y - aFocus.y; // shift ancestors so the shared focus row lines up
+
+  // Ancestors mirrored to the left of the focus (focus itself kept once, from desc).
+  const merged = [
+    ...desc.nodes,
+    ...anc.nodes.filter(n => !n.isFocus).map(n => ({ ...n, x: -n.x, y: n.y + dy })),
+  ];
+
+  // Normalise so the whole hourglass sits at x,y >= 0.
+  const minX = Math.min(...merged.map(n => n.x));
+  const minY = Math.min(...merged.map(n => n.y));
+  const nodes: LayoutNode[] = merged.map(n => ({ ...n, x: n.x - minX, y: n.y - minY }));
+
+  const pos = new Map(nodes.map(n => [n.id, n]));
+  const edges: LayoutEdge[] = [];
+  const seenEdge = new Set<string>();
+  for (const e of [...desc.edges, ...anc.edges]) {
+    if (!e.sourceId || !e.targetId || seenEdge.has(e.id)) continue;
+    const a = pos.get(e.sourceId);
+    const b = pos.get(e.targetId);
+    if (!a || !b) continue;
+    seenEdge.add(e.id);
+    const [L, R] = a.x <= b.x ? [a, b] : [b, a];
+    edges.push({
+      id: e.id, sourceId: e.sourceId, targetId: e.targetId,
+      x1: L.x + CARD_W, y1: L.y + CARD_H / 2,
+      x2: R.x, y2: R.y + CARD_H / 2,
+    });
+  }
 
   return { nodes, edges };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildLayout, CARD_W, CARD_H } from './pedigree-layout';
+import { buildLayout, buildCompleteLayout, CARD_W, CARD_H } from './pedigree-layout';
 import { Individual, Union, UUID } from '../core/model/types';
 
 function makeIndi(id: UUID, given: string, unions: UUID[] = []): Individual {
@@ -77,6 +77,38 @@ describe('pedigree-layout', () => {
       expect(n.y).toBeGreaterThanOrEqual(0);
       expect(n.x).toBeGreaterThanOrEqual(0);
     }
+  });
+
+  it('complete: ancestors left, focus middle, descendants right — all generations present', () => {
+    // grandparent → parent → focus → child → grandchild
+    const gp = makeIndi('GP', 'Gramps', ['UA']);
+    const parent = makeIndi('PA', 'Parent', ['UB']);
+    const focus = makeIndi('FO', 'Focus', ['UC']);
+    const child = makeIndi('CH', 'Child', ['UD']);
+    const grandchild = makeIndi('GC', 'Grandchild');
+    const individuals = new Map([
+      ['GP', gp], ['PA', parent], ['FO', focus], ['CH', child], ['GC', grandchild],
+    ]);
+    const unions = new Map([
+      ['UA', makeUnion('UA', ['GP'], ['PA'])],
+      ['UB', makeUnion('UB', ['PA'], ['FO'])],
+      ['UC', makeUnion('UC', ['FO'], ['CH'])],
+      ['UD', makeUnion('UD', ['CH'], ['GC'])],
+    ]);
+
+    const layout = buildCompleteLayout('FO', individuals, unions);
+
+    // every generation appears exactly once, focus included once
+    expect(layout.nodes.map(n => n.id).sort()).toEqual(['CH', 'FO', 'GC', 'GP', 'PA']);
+    expect(layout.edges).toHaveLength(4);
+
+    const x = (id: string) => layout.nodes.find(n => n.id === id)!.x;
+    // ancestors sit left of the focus, descendants right of it
+    expect(x('GP')).toBeLessThan(x('PA'));
+    expect(x('PA')).toBeLessThan(x('FO'));
+    expect(x('FO')).toBeLessThan(x('CH'));
+    expect(x('CH')).toBeLessThan(x('GC'));
+    expect(Math.min(...layout.nodes.map(n => n.x))).toBeGreaterThanOrEqual(0);
   });
 
   it('avoids infinite loop on circular reference (same person in two generations)', () => {

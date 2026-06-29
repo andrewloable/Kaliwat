@@ -5,7 +5,7 @@ import {
 import { select } from 'd3-selection';
 import { zoom, ZoomBehavior, zoomIdentity } from 'd3-zoom';
 import { TreeStore } from '../../core/tree-store/tree.store';
-import { buildLayout, CARD_W, CARD_H, LayoutNode, LayoutEdge } from '../../layout/pedigree-layout';
+import { buildLayout, buildCompleteLayout, CARD_W, CARD_H, LayoutNode, LayoutEdge } from '../../layout/pedigree-layout';
 import { buildDagLayout, DagNode, DagEdge } from '../../layout/dag-layout';
 import { Individual } from '../../core/model/types';
 import { MediaService } from '../../media/media.service';
@@ -31,7 +31,7 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
   protected readonly media = inject(MediaService);
   protected readonly search = inject(SearchService);
 
-  readonly mode = signal<'pedigree' | 'descendants' | 'family'>('pedigree');
+  readonly mode = signal<'pedigree' | 'descendants' | 'family' | 'complete'>('pedigree');
   readonly focusId = signal<string | null>(null);
 
   // Search in tree mode is a "jump to person": matches surface in a dropdown,
@@ -89,6 +89,7 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
     const uMap = new Map(unions.map(u => [u.id, u]));
     const mode = this.mode();
     if (mode === 'family') return { nodes: [], edges: [] }; // handled by dagLayout
+    if (mode === 'complete') return buildCompleteLayout(focusId, iMap, uMap);
     return buildLayout(focusId, mode, iMap, uMap);
   });
 

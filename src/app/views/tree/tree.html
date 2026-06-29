@@ -4,6 +4,7 @@
       <button class="mode-btn" [class.active]="mode() === 'pedigree'" (click)="mode.set('pedigree')">Ancestors</button>
       <button class="mode-btn" [class.active]="mode() === 'descendants'" (click)="mode.set('descendants')">Descendants</button>
       <button class="mode-btn" [class.active]="mode() === 'family'" (click)="mode.set('family')">Family</button>
+      <button class="mode-btn" [class.active]="mode() === 'complete'" (click)="mode.set('complete')">Full tree</button>
     }
     <button class="recenter-btn" title="Recenter" (click)="recenter()">⊙ Recenter</button>
     @if (!store.isEmpty()) {
