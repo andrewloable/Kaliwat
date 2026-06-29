@@ -30,7 +30,7 @@ function walk(node: GedcomNode, fn: (n: GedcomNode) => void): void {
 }
 
 /** Friendly label for an EVEN "fact" whose value is a known social URL. */
-function factLabel(type: string, value: string): string {
+export function factLabel(type: string, value: string): string {
   const v = value.toLowerCase();
   if (v.includes('facebook.com')) return 'Facebook';
   if (v.includes('twitter.com') || v.includes('x.com')) return 'Twitter / X';
@@ -44,7 +44,7 @@ function factLabel(type: string, value: string): string {
  * EMAIL (often under RESI, which we don't model as an event), PHON, WWW, and
  * generic EVEN facts (e.g. a Facebook URL with `2 TYPE`).
  */
-function extractDetails(indi: Individual | null): PersonDetail[] {
+export function extractDetails(indi: Individual | null): PersonDetail[] {
   if (!indi?.rawRef) return [];
   const out: PersonDetail[] = [];
   const seen = new Set<string>();

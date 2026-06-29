@@ -76,6 +76,20 @@
   cursor: pointer;
 }
 
+.pdf-size,
+.pdf-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+.pdf-btn:disabled { opacity: 0.6; cursor: default; }
+
 .tree-svg {
   flex: 1;
   cursor: grab;

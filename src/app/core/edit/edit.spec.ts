@@ -134,6 +134,46 @@ describe('EditService', () => {
     expect(store.individuals().find(i => i.id === a)?.unions).toHaveLength(0);
   });
 
+  it('addChild creates a blank child attached to the parent', () => {
+    const dad = service.createIndividual(baseForm({ given: 'Dad', sex: 'M' }));
+    const kid = service.addChild(dad);
+    expect(store.individuals().find(i => i.id === kid)).toBeDefined();
+    const union = store.unions().find(u => u.spouseIds.includes(dad));
+    expect(union?.childLinks.map(c => c.childId)).toContain(kid);
+  });
+
+  it('addParent creates a blank parent attached to the child', () => {
+    const kid = service.createIndividual(baseForm({ given: 'Kid' }));
+    const parent = service.addParent(kid);
+    expect(store.ancestorIds(kid).has(parent)).toBe(true);
+  });
+
+  it('addSpouse links a blank spouse', () => {
+    const a = service.createIndividual(baseForm({ given: 'A', sex: 'M' }));
+    const b = service.addSpouse(a);
+    const union = store.unions()[0];
+    expect(union.spouseIds).toContain(a);
+    expect(union.spouseIds).toContain(b);
+  });
+
+  it('addSibling reuses the existing parent union so siblings share parents', () => {
+    const dad = service.createIndividual(baseForm({ given: 'Dad', sex: 'M' }));
+    const kid = service.createIndividual(baseForm({ given: 'Kid' }));
+    service.addParentChild(dad, kid);
+    const sib = service.addSibling(kid);
+    const union = store.unions().find(u => u.spouseIds.includes(dad))!;
+    expect(union.childLinks.map(c => c.childId)).toEqual(expect.arrayContaining([kid, sib]));
+    expect(store.unions()).toHaveLength(1);
+  });
+
+  it('addSibling creates a childless-parents union when the person has no parents yet', () => {
+    const lone = service.createIndividual(baseForm({ given: 'Lone' }));
+    const sib = service.addSibling(lone);
+    const union = store.unions()[0];
+    expect(union.spouseIds).toHaveLength(0);
+    expect(union.childLinks.map(c => c.childId)).toEqual(expect.arrayContaining([lone, sib]));
+  });
+
   it('ancestorIds returns empty for person with no parents', () => {
     const id = service.createIndividual(baseForm());
     expect(store.ancestorIds(id).size).toBe(0);

@@ -6,6 +6,21 @@
       <button class="mode-btn" [class.active]="mode() === 'family'" (click)="mode.set('family')">Family</button>
     }
     <button class="recenter-btn" title="Recenter" (click)="recenter()">⊙ Recenter</button>
+    @if (!store.isEmpty()) {
+      <select class="pdf-size" aria-label="PDF page size" title="PDF page size"
+        [value]="pdfSize()" (change)="pdfSize.set($any($event.target).value)">
+        <option value="a4">A4</option>
+        <option value="a3">A3</option>
+        <option value="a2">A2</option>
+        <option value="letter">Letter</option>
+        <option value="legal">Legal</option>
+        <option value="tabloid">Tabloid</option>
+      </select>
+      <button class="pdf-btn" title="Export current tree to PDF"
+        [disabled]="exporting()" (click)="exportPdf()">
+        {{ exporting() ? 'Exporting…' : '⤓ PDF' }}
+      </button>
+    }
   </div>
 
   @if (search.query().trim()) {

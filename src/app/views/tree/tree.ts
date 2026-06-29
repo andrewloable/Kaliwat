@@ -13,6 +13,7 @@ import { SearchService } from '../../core/search/search.service';
 import { fold, matchesTerms } from '../../core/search/search-util';
 import { PersonEditorComponent } from '../../ui/person-editor/person-editor';
 import { wrapToLines } from './wrap-text';
+import { exportTreePdf, PageFormat } from './pdf-export';
 
 export const UNION_R = 14; // union dot radius — keep in sync with dag-layout.ts
 
@@ -119,6 +120,20 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     if (this.svgEl) {
       select<SVGSVGElement, unknown>(this.svgEl.nativeElement).on('.zoom', null);
+    }
+  }
+
+  // PDF export of the current tree view (ancestors / descendants / family).
+  readonly pdfSize = signal<PageFormat>('a4');
+  readonly exporting = signal(false);
+
+  async exportPdf(): Promise<void> {
+    if (this.exporting() || this.store.isEmpty() || !this.chartLayerEl) return;
+    this.exporting.set(true);
+    try {
+      await exportTreePdf(this.chartLayerEl.nativeElement, this.pdfSize());
+    } finally {
+      this.exporting.set(false);
     }
   }
 
