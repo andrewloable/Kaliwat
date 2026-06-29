@@ -1,11 +1,11 @@
-import { Component, computed, inject, signal, ViewChild, ElementRef } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { Component, computed, inject, ViewChild } from '@angular/core';
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { TreeStore } from '../../core/tree-store/tree.store';
 import { ImportService } from '../../core/import/import.service';
-import { EditService, PersonFormData } from '../../core/edit/edit.service';
 import { SearchService } from '../../core/search/search.service';
+import { fold, matchesTerms } from '../../core/search/search-util';
 import { MediaService } from '../../media/media.service';
+import { PersonEditorComponent } from '../../ui/person-editor/person-editor';
 import { Individual } from '../../core/model/types';
 
 export interface ListRow {
@@ -16,6 +16,7 @@ export interface ListRow {
   birthYear: string;
   deathYear: string;
   sortKey: string;
+  searchKey: string;
   mediaId?: string;
 }
 
@@ -38,28 +39,12 @@ function toRow(indi: Individual): ListRow {
   const subtitle = birth?.place ?? '';
   const sortKey = `${n0?.surname ?? ''} ${n0?.given ?? name}`.trim().toLowerCase();
 
-  return { id: indi.id, displayName: name || '(no name)', initials, subtitle, birthYear, deathYear, sortKey, mediaId: indi.mediaIds[0] };
-}
-
-function blankForm(): PersonFormData {
-  return { given: '', surname: '', sex: 'U', birthDate: '', birthPlace: '', deathDate: '', deathPlace: '', notes: '' };
-}
-
-function indi2form(indi: Individual): PersonFormData {
-  const n = indi.names[0];
-  const birth = indi.events.find(e => e.type === 'BIRT');
-  const death = indi.events.find(e => e.type === 'DEAT');
-  return {
-    given: n?.given ?? '', surname: n?.surname ?? '', sex: (indi.sex as 'M' | 'F' | 'U') ?? 'U',
-    birthDate: birth?.date ?? '', birthPlace: birth?.place ?? '',
-    deathDate: death?.date ?? '', deathPlace: death?.place ?? '',
-    notes: indi.notes[0] ?? '',
-  };
+  return { id: indi.id, displayName: name || '(no name)', initials, subtitle, birthYear, deathYear, sortKey, searchKey: fold(name), mediaId: indi.mediaIds[0] };
 }
 
 @Component({
   selector: 'app-list',
-  imports: [ScrollingModule, FormsModule],
+  imports: [ScrollingModule, PersonEditorComponent],
   template: `
     <div class="list-shell">
       @if (store.importStatus().kind === 'importing') {
@@ -111,8 +96,8 @@ function indi2form(indi: Individual): PersonFormData {
             class="list-row"
             tabindex="0"
             [attr.aria-label]="row.displayName"
-            (click)="openEdit(row.id)"
-            (keydown.enter)="openEdit(row.id)"
+            (click)="editor.open(row.id)"
+            (keydown.enter)="editor.open(row.id)"
           >
             @let photo = media.avatar(store.currentTreeId(), row.mediaId)();
             @if (photo) {
@@ -131,71 +116,12 @@ function indi2form(indi: Individual): PersonFormData {
             </span>
           </div>
         </cdk-virtual-scroll-viewport>
-        <button class="add-person-btn" type="button" (click)="openNew()" aria-label="Add person">+</button>
+        <button class="add-person-btn" type="button" (click)="editor.open('new')" aria-label="Add person">+</button>
       }
 
       <input #filePicker type="file" accept=".ged,.gdz" style="display:none" (change)="onFilePicked($event)" aria-label="Choose GEDCOM file" />
 
-      <!-- Edit panel (overlay) -->
-      @if (editState() !== 'closed') {
-        <div class="edit-backdrop" (click)="closeEdit()" aria-hidden="true"></div>
-        <aside class="edit-panel" role="dialog" aria-modal="true" [attr.aria-label]="editState() === 'new' ? 'Add person' : 'Edit person'">
-          <h2 class="panel-title">{{ editState() === 'new' ? 'Add person' : 'Edit person' }}</h2>
-          <form class="edit-form" (ngSubmit)="saveEdit()">
-            <div class="field-row">
-              <label>
-                Given name
-                <input class="field-input" [(ngModel)]="form.given" name="given" required autocomplete="off" />
-              </label>
-              <label>
-                Surname
-                <input class="field-input" [(ngModel)]="form.surname" name="surname" autocomplete="off" />
-              </label>
-            </div>
-            <label>
-              Sex
-              <select class="field-input" [(ngModel)]="form.sex" name="sex">
-                <option value="M">Male</option>
-                <option value="F">Female</option>
-                <option value="U">Unknown</option>
-              </select>
-            </label>
-            <div class="field-group-label">Birth</div>
-            <div class="field-row">
-              <label>
-                Date
-                <input class="field-input" [(ngModel)]="form.birthDate" name="birthDate" placeholder="e.g. 15 JUN 1940" autocomplete="off" />
-              </label>
-              <label>
-                Place
-                <input class="field-input" [(ngModel)]="form.birthPlace" name="birthPlace" autocomplete="off" />
-              </label>
-            </div>
-            <div class="field-group-label">Death</div>
-            <div class="field-row">
-              <label>
-                Date
-                <input class="field-input" [(ngModel)]="form.deathDate" name="deathDate" placeholder="e.g. 3 MAR 2010" autocomplete="off" />
-              </label>
-              <label>
-                Place
-                <input class="field-input" [(ngModel)]="form.deathPlace" name="deathPlace" autocomplete="off" />
-              </label>
-            </div>
-            <label>
-              Notes
-              <textarea class="field-input field-textarea" [(ngModel)]="form.notes" name="notes" rows="3"></textarea>
-            </label>
-            @if (editError()) {
-              <p class="edit-error" role="alert">{{ editError() }}</p>
-            }
-            <div class="panel-actions">
-              <button class="cancel-btn" type="button" (click)="closeEdit()">Cancel</button>
-              <button class="save-btn" type="submit">Save</button>
-            </div>
-          </form>
-        </aside>
-      }
+      <app-person-editor #editor />
     </div>
   `,
   styles: [`
@@ -314,47 +240,6 @@ function indi2form(indi: Individual): PersonFormData {
       box-shadow: 0 2px 8px rgba(0,0,0,.18);
       &:hover { filter: brightness(1.08); }
     }
-
-    /* Edit panel */
-    .edit-backdrop {
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,.32);
-      z-index: 100;
-    }
-    .edit-panel {
-      position: fixed; top: 0; right: 0; bottom: 0;
-      width: min(420px, 100vw);
-      background: var(--paper); z-index: 101;
-      padding: 1.5rem 1.25rem;
-      overflow-y: auto;
-      display: flex; flex-direction: column; gap: 1rem;
-      box-shadow: -4px 0 24px rgba(0,0,0,.12);
-    }
-    .panel-title { font-family: var(--font-serif); font-size: 1.375rem; margin: 0; color: var(--ink); }
-    .edit-form { display: flex; flex-direction: column; gap: 0.875rem; }
-    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-    label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.8125rem; color: var(--ink-soft); }
-    .field-input {
-      padding: 0.4rem 0.6rem; border: 1px solid var(--line);
-      border-radius: 6px; background: var(--paper-2);
-      font-size: 0.9375rem; color: var(--ink);
-      &:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
-    }
-    .field-textarea { resize: vertical; min-height: 72px; font-family: var(--font-sans); }
-    .field-group-label { font-size: 0.75rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; margin-top: 0.25rem; }
-    .edit-error { font-size: 0.875rem; color: #c0392b; margin: 0; }
-    .panel-actions { display: flex; gap: 0.75rem; justify-content: flex-end; padding-top: 0.25rem; }
-    .cancel-btn {
-      padding: 0.5rem 1rem; background: transparent;
-      border: 1px solid var(--line); border-radius: 7px;
-      font-size: 0.9375rem; cursor: pointer; color: var(--ink-soft);
-    }
-    .save-btn {
-      padding: 0.5rem 1.25rem; background: var(--accent); color: #fff;
-      border: none; border-radius: 7px;
-      font-size: 0.9375rem; cursor: pointer;
-      &:hover { filter: brightness(1.08); }
-    }
   `],
 })
 export class ListComponent {
@@ -362,14 +247,10 @@ export class ListComponent {
   readonly search = inject(SearchService);
   readonly media = inject(MediaService);
   private readonly importService = inject(ImportService);
-  private readonly editService = inject(EditService);
+
+  @ViewChild(PersonEditorComponent) private editor!: PersonEditorComponent;
 
   isDragOver = false;
-
-  // 'closed' | 'new' | '<uuid>' (editing existing)
-  readonly editState = signal<'closed' | 'new' | string>('closed');
-  readonly editError = signal<string | null>(null);
-  form: PersonFormData = blankForm();
 
   readonly rows = computed(() =>
     this.store
@@ -378,9 +259,9 @@ export class ListComponent {
       .sort((a, b) => a.sortKey.localeCompare(b.sortKey)),
   );
   readonly filtered = computed(() => {
-    const q = this.search.query().toLowerCase().trim();
+    const q = fold(this.search.query().trim());
     if (!q) return this.rows();
-    return this.rows().filter((r) => r.displayName.toLowerCase().includes(q));
+    return this.rows().filter((r) => matchesTerms(r.searchKey, q));
   });
 
   trackById(_: number, row: ListRow) { return row.id; }
@@ -393,36 +274,6 @@ export class ListComponent {
     (document.querySelector('input[type="file"]') as HTMLInputElement | null)?.click();
   }
 
-  openNew(): void {
-    this.form = blankForm();
-    this.editError.set(null);
-    this.editState.set('new');
-  }
-
-  openEdit(id: string): void {
-    const indi = this.store.individuals().find(i => i.id === id);
-    if (!indi) return;
-    this.form = indi2form(indi);
-    this.editError.set(null);
-    this.editState.set(id);
-  }
-
-  closeEdit(): void { this.editState.set('closed'); }
-
-  saveEdit(): void {
-    if (!this.form.given.trim() && !this.form.surname.trim()) {
-      this.editError.set('Please enter at least a given name or surname.');
-      return;
-    }
-    const state = this.editState();
-    if (state === 'new') {
-      this.editService.createIndividual(this.form);
-    } else {
-      this.editService.updateIndividual(state, this.form);
-    }
-    this.closeEdit();
-  }
-
   startWithYourself(): void {
     // Initialize a new tree if not already present
     if (!this.store.currentTreeId()) {
@@ -430,9 +281,7 @@ export class ListComponent {
       this.store.setTreeId(treeId);
       this.store.importStatus.set({ kind: 'success', treeId, total: 0, skipped: 0, warnings: [] });
     }
-    this.form = blankForm();
-    this.editError.set(null);
-    this.editState.set('new');
+    this.editor.open('new');
   }
 
   onFilePicked(e: Event): void {

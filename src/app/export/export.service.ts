@@ -27,7 +27,7 @@ export class ExportService {
     if (!treeId) return null;
 
     const astRec = await db.rawAst.get([treeId, 'root']);
-    const nodes: GedcomNode[] = astRec?.nodes ?? this.astFromStore();
+    const nodes: GedcomNode[] = this.buildExportAst(astRec?.nodes);
 
     const blobs = await db.mediaBlobs
       .where('[treeId+id]').between([treeId, MIN_ID], [treeId, MAX_ID]).toArray();
@@ -55,17 +55,59 @@ export class ExportService {
     return 'gdz';
   }
 
-  /** Fallback documentAst for in-app-created trees (no imported rawAst). */
-  private astFromStore(): GedcomNode[] {
-    const mk = (tag: string, value?: string, children: GedcomNode[] = [], level = 0): GedcomNode =>
-      ({ level, tag, value, children, xref: undefined, pointer: undefined });
-    const head = mk('HEAD', undefined, [
-      mk('GEDC', undefined, [mk('VERS', '5.5.1', [], 2)], 1),
-      mk('CHAR', 'UTF-8', [], 1),
+  /**
+   * Build the export AST from the live model so edits AND added relationships
+   * are reflected. Each INDI/FAM keeps its own tags (name, events, custom, media)
+   * via rawRef, but the relational pointers (FAMS/FAMC, HUSB/WIFE/CHIL) are
+   * regenerated from the model with valid xrefs. HEAD plus any non-INDI/FAM
+   * records (sources, notes, submitters) are carried over from the original AST.
+   */
+  private buildExportAst(originalAst?: GedcomNode[]): GedcomNode[] {
+    const indis = this.store.individuals();
+    const unions = this.store.unions();
+    const indiXref = new Map(indis.map((i) => [i.id, i.sourceXref || `@I${i.id.slice(0, 8).toUpperCase()}@`]));
+    const unionXref = new Map(unions.map((u) => [u.id, u.sourceXref || `@F${u.id.slice(0, 8).toUpperCase()}@`]));
+
+    const indiNodes = indis.map((i) => {
+      const base = i.rawRef ? cloneNode(i.rawRef) : node('INDI');
+      base.xref = indiXref.get(i.id);
+      base.children = base.children.filter((c) => c.tag !== 'FAMS' && c.tag !== 'FAMC');
+      for (const u of unions) {
+        const ux = unionXref.get(u.id)!;
+        if (u.spouseIds.includes(i.id)) base.children.push(ptr('FAMS', ux));
+        const cl = u.childLinks.find((c) => c.childId === i.id);
+        if (cl) {
+          const famc = ptr('FAMC', ux);
+          if (cl.pedi) famc.children.push(node('PEDI', cl.pedi, [], 2));
+          if (cl.status) famc.children.push(node('STAT', cl.status, [], 2));
+          base.children.push(famc);
+        }
+      }
+      return base;
+    });
+
+    const famNodes = unions.map((u) => {
+      const base = u.rawRef ? cloneNode(u.rawRef) : node('FAM');
+      base.xref = unionXref.get(u.id);
+      const rel: GedcomNode[] = [];
+      for (const sid of u.spouseIds) {
+        const sx = indiXref.get(sid);
+        if (sx) rel.push(ptr(indis.find((x) => x.id === sid)?.sex === 'F' ? 'WIFE' : 'HUSB', sx));
+      }
+      for (const cl of u.childLinks) {
+        const cx = indiXref.get(cl.childId);
+        if (cx) rel.push(ptr('CHIL', cx));
+      }
+      base.children = [...rel, ...base.children.filter((c) => !['HUSB', 'WIFE', 'CHIL'].includes(c.tag))];
+      return base;
+    });
+
+    const head = originalAst?.find((n) => n.tag === 'HEAD') ?? node('HEAD', undefined, [
+      node('GEDC', undefined, [node('VERS', '5.5.1', [], 2)], 1),
+      node('CHAR', 'UTF-8', [], 1),
     ]);
-    const indis = this.store.individuals().map((i) => i.rawRef).filter(Boolean) as GedcomNode[];
-    const fams = this.store.unions().map((u) => u.rawRef).filter(Boolean) as GedcomNode[];
-    return [head, ...indis, ...fams, mk('TRLR')];
+    const others = (originalAst ?? []).filter((n) => !['HEAD', 'INDI', 'FAM', 'TRLR'].includes(n.tag));
+    return [head, ...others, ...indiNodes, ...famNodes, node('TRLR')];
   }
 
   private download(blob: Blob, filename: string): void {
@@ -78,6 +120,18 @@ export class ExportService {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+}
+
+function node(tag: string, value?: string, children: GedcomNode[] = [], level = 0): GedcomNode {
+  return { level, tag, value, children, xref: undefined, pointer: undefined };
+}
+
+function ptr(tag: string, pointer: string): GedcomNode {
+  return { level: 1, tag, pointer, value: undefined, xref: undefined, children: [] };
+}
+
+function cloneNode(n: GedcomNode): GedcomNode {
+  return { ...n, children: n.children.map(cloneNode) };
 }
 
 /** Deep-clone the AST, rewriting FILE node values that match a cached URL. */

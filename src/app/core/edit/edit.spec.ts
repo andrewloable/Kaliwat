@@ -105,6 +105,35 @@ describe('EditService', () => {
     expect(err?.kind).toBe('self-parent');
   });
 
+  it('deleteIndividual removes the person and keeps a union with 2+ participants', () => {
+    const parentId = service.createIndividual(baseForm({ given: 'Parent', sex: 'M' }));
+    const child1 = service.createIndividual(baseForm({ given: 'Child1' }));
+    const child2 = service.createIndividual(baseForm({ given: 'Child2' }));
+    service.addParentChild(parentId, child1);
+    service.addParentChild(parentId, child2);
+    expect(store.unions()[0].childLinks).toHaveLength(2);
+
+    service.deleteIndividual(child1);
+
+    expect(store.individuals().find(i => i.id === child1)).toBeUndefined();
+    const u = store.unions();
+    expect(u).toHaveLength(1);
+    expect(u[0].childLinks.map(c => c.childId)).toEqual([child2]);
+    expect(u[0].spouseIds).toContain(parentId);
+  });
+
+  it('deleteIndividual drops a union left with fewer than two participants and unlinks it', () => {
+    const a = service.createIndividual(baseForm({ given: 'Juan', sex: 'M' }));
+    const b = service.createIndividual(baseForm({ given: 'María', sex: 'F' }));
+    service.linkSpouses(a, b);
+    expect(store.unions()).toHaveLength(1);
+
+    service.deleteIndividual(b);
+
+    expect(store.unions()).toHaveLength(0);
+    expect(store.individuals().find(i => i.id === a)?.unions).toHaveLength(0);
+  });
+
   it('ancestorIds returns empty for person with no parents', () => {
     const id = service.createIndividual(baseForm());
     expect(store.ancestorIds(id).size).toBe(0);

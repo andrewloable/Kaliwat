@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { TreeStore } from '../tree-store/tree.store';
 import { PersistenceService } from '../db/persistence.service';
+import { db } from '../db/kaliwat-db';
 import { Individual, Union, UUID, GedcomNode, PersonName, GedcomEvent } from '../model/types';
 
 function uuid(): UUID {
@@ -48,6 +49,8 @@ export interface PersonFormData {
 export type ValidationError =
   | { kind: 'self-parent'; message: string }
   | { kind: 'cycle'; message: string };
+
+const BLANK_PERSON = (): PersonFormData => ({ given: '', surname: '', sex: 'U' });
 
 @Injectable({ providedIn: 'root' })
 export class EditService {
@@ -190,6 +193,100 @@ export class EditService {
 
     this._scheduleWrite();
     return null;
+  }
+
+  /**
+   * Delete an individual and clean up references: remove them from every union's
+   * spouses and children, drop unions left with fewer than two participants, and
+   * unlink those dropped unions from the people who referenced them. Removed rows
+   * are deleted from IndexedDB immediately (not via the debounced write) so rapid
+   * deletes can't coalesce a removal away.
+   */
+  deleteIndividual(id: UUID): void {
+    const removedUnionIds: UUID[] = [];
+    const keptUnions = this.store.unions()
+      .map((u) => ({
+        ...u,
+        spouseIds: u.spouseIds.filter((s) => s !== id),
+        childLinks: u.childLinks.filter((c) => c.childId !== id),
+      }))
+      .filter((u) => {
+        if (u.spouseIds.length + u.childLinks.length >= 2) return true;
+        removedUnionIds.push(u.id);
+        return false;
+      });
+
+    const removed = new Set(removedUnionIds);
+    const individuals = this.store.individuals()
+      .filter((i) => i.id !== id)
+      .map((i) =>
+        i.unions.some((r) => removed.has(r.unionId))
+          ? { ...i, unions: i.unions.filter((r) => !removed.has(r.unionId)) }
+          : i,
+      );
+
+    this.store.setIndividuals(individuals);
+    this.store.setUnions(keptUnions);
+
+    const treeId = this.store.currentTreeId();
+    if (treeId) {
+      void db.individuals.delete([treeId, id]);
+      for (const uid of removedUnionIds) void db.unions.delete([treeId, uid]);
+    }
+    this._scheduleWrite();
+  }
+
+  // ── Quick relationship builders ───────────────────────────────────────────
+  // Each creates a blank person wired to `personId`, returning the new id so the
+  // caller can open the editor to fill in their name.
+
+  addChild(parentId: UUID): UUID {
+    const childId = this.createIndividual(BLANK_PERSON());
+    this.addParentChild(parentId, childId);
+    return childId;
+  }
+
+  addParent(childId: UUID): UUID {
+    const parentId = this.createIndividual(BLANK_PERSON());
+    this.addParentChild(parentId, childId);
+    return parentId;
+  }
+
+  addSpouse(personId: UUID): UUID {
+    const spouseId = this.createIndividual(BLANK_PERSON());
+    this.linkSpouses(personId, spouseId);
+    return spouseId;
+  }
+
+  addSibling(personId: UUID): UUID {
+    const sibId = this.createIndividual(BLANK_PERSON());
+    const union = this._parentUnionOf(personId) ?? this._newParentUnion(personId);
+    if (!union.childLinks.some((c) => c.childId === sibId)) {
+      this.store.upsertUnion({
+        ...union,
+        childLinks: [...union.childLinks, { childId: sibId, pedi: undefined, status: undefined, citations: [], notes: [] }],
+      });
+    }
+    this._scheduleWrite();
+    return sibId;
+  }
+
+  /** The union whose childLinks include `childId` (their parents), if any. */
+  private _parentUnionOf(childId: UUID): Union | undefined {
+    return this.store.unions().find((u) => u.childLinks.some((c) => c.childId === childId));
+  }
+
+  /** Create a childless-parents union holding `childId` (so siblings can attach). */
+  private _newParentUnion(childId: UUID): Union {
+    const unionId = uuid();
+    const xref = `@F${unionId.slice(0, 8).toUpperCase()}@`;
+    const union: Union = {
+      id: unionId, sourceXref: xref, spouseIds: [], events: [],
+      childLinks: [{ childId, pedi: undefined, status: undefined, citations: [], notes: [] }],
+      rawRef: makeFamNode(xref),
+    };
+    this.store.upsertUnion(union);
+    return union;
   }
 
   private _linkChildToUnion(childId: UUID, unionId: UUID): void {

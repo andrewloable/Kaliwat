@@ -79,6 +79,31 @@ describe('ListComponent', () => {
     expect(filtered[0].displayName).toContain('Alice');
   });
 
+  it('search is diacritic-insensitive (manus matches Mañus, raphael matches Raphaël)', () => {
+    const fixture = TestBed.createComponent(ListComponent);
+    store.setIndividuals([
+      makeIndi('a', 'Marianita Mañus'),
+      makeIndi('b', 'Raphaël Loable'),
+      makeIndi('c', 'Bob Jones'),
+    ]);
+    search.query.set('manus');
+    expect(fixture.componentInstance.filtered().map(r => r.displayName)).toEqual(['Marianita Mañus']);
+    search.query.set('raphael');
+    expect(fixture.componentInstance.filtered().map(r => r.displayName)).toEqual(['Raphaël Loable']);
+  });
+
+  it('search matches all terms in any order, across middle names', () => {
+    const fixture = TestBed.createComponent(ListComponent);
+    store.setIndividuals([
+      makeIndi('a', 'Andrew Mañus Loable'),
+      makeIndi('b', 'Bob Jones'),
+    ]);
+    search.query.set('andrew loable');
+    expect(fixture.componentInstance.filtered().map(r => r.displayName)).toEqual(['Andrew Mañus Loable']);
+    search.query.set('loable andrew');
+    expect(fixture.componentInstance.filtered().map(r => r.displayName)).toEqual(['Andrew Mañus Loable']);
+  });
+
   it('no-results state is visually distinct from empty-tree', () => {
     const fixture = TestBed.createComponent(ListComponent);
     store.setIndividuals([makeIndi('a', 'Alice')]);

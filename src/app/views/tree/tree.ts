@@ -9,6 +9,8 @@ import { buildLayout, CARD_W, CARD_H, LayoutNode, LayoutEdge } from '../../layou
 import { buildDagLayout, DagNode, DagEdge } from '../../layout/dag-layout';
 import { Individual } from '../../core/model/types';
 import { MediaService } from '../../media/media.service';
+import { SearchService } from '../../core/search/search.service';
+import { fold, matchesTerms } from '../../core/search/search-util';
 import { PersonEditorComponent } from '../../ui/person-editor/person-editor';
 import { wrapToLines } from './wrap-text';
 
@@ -26,16 +28,53 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
 
   protected readonly store = inject(TreeStore);
   protected readonly media = inject(MediaService);
+  protected readonly search = inject(SearchService);
 
   readonly mode = signal<'pedigree' | 'descendants' | 'family'>('pedigree');
   readonly focusId = signal<string | null>(null);
 
+  // Search in tree mode is a "jump to person": matches surface in a dropdown,
+  // and picking one focuses the tree on them.
+  readonly searchMatches = computed(() => {
+    const q = fold(this.search.query().trim());
+    if (!q) return [];
+    return this.store.individuals()
+      .filter((i) => matchesTerms(fold(i.names[0]?.full ?? ''), q))
+      .slice(0, 8)
+      .map((i) => ({ id: i.id, name: i.names[0]?.full || '(no name)', years: this.years(i) }));
+  });
+
+  selectResult(id: string): void {
+    this.setFocus(id);
+    this.search.query.set('');
+    this.centerOnFocus();
+  }
+
+  /** Pan (at current scale) so the focused person sits in the viewport centre. */
+  private centerOnFocus(): void {
+    if (!this.svgEl || !this.zoomBehavior) return;
+    const nodes = this.mode() === 'family' ? this.dagLayout().nodes : this.layout().nodes;
+    const focus = nodes.find((n) => n.isFocus);
+    if (!focus) { this.recenter(); return; }
+    const svg = this.svgEl.nativeElement;
+    const rect = svg.getBoundingClientRect();
+    const tx = rect.width / 2 - (focus.x + CARD_W / 2);
+    const ty = rect.height / 2 - (focus.y + CARD_H / 2);
+    this.zoomBehavior.transform(
+      select<SVGSVGElement, unknown>(svg),
+      zoomIdentity.translate(tx, ty),
+    );
+  }
+
   private zoomBehavior?: ZoomBehavior<SVGSVGElement, unknown>;
 
-  // Auto-select first person when tree loads
+  // Auto-select first person when the tree loads, and re-select if the focused
+  // person goes away (e.g. was deleted).
   private readonly _autoFocus = effect(() => {
     const people = this.store.individuals();
-    if (people.length > 0 && !this.focusId()) {
+    if (people.length === 0) return;
+    const fid = this.focusId();
+    if (!fid || !people.some((p) => p.id === fid)) {
       this.focusId.set(people[0].id);
     }
   });

@@ -8,6 +8,25 @@
     <button class="recenter-btn" title="Recenter" (click)="recenter()">⊙ Recenter</button>
   </div>
 
+  @if (search.query().trim()) {
+    <div class="tree-search-panel" role="listbox" aria-label="Search results">
+      @if (searchMatches().length) {
+        <ul class="tree-search-results">
+          @for (m of searchMatches(); track m.id) {
+            <li>
+              <button type="button" class="tsr-item" role="option" (click)="selectResult(m.id)">
+                <span class="tsr-name">{{ m.name }}</span>
+                <span class="tsr-years">{{ m.years }}</span>
+              </button>
+            </li>
+          }
+        </ul>
+      } @else {
+        <div class="tree-search-empty">No people match "{{ search.query() }}"</div>
+      }
+    </div>
+  }
+
   <svg #svgEl class="tree-svg" aria-label="Family tree diagram">
     <g #chartLayer>
       @if (mode() !== 'family') {
