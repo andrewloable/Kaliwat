@@ -4,3 +4,15 @@ sample
 .dolt/
 *.db
 .beads-credential-key
+
+# Angular / Node
+/node_modules
+/dist
+/.angular/cache
+.angular/
+npm-debug.log
+yarn-error.log
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
