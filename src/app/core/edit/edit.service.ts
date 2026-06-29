@@ -2,7 +2,8 @@ import { Injectable, inject } from '@angular/core';
 import { TreeStore } from '../tree-store/tree.store';
 import { PersistenceService } from '../db/persistence.service';
 import { db } from '../db/kaliwat-db';
-import { Individual, Union, UUID, GedcomNode, PersonName, GedcomEvent } from '../model/types';
+import { makeThumbnail } from '../../gedcom/gedzip/gedzip';
+import { Individual, Union, UUID, GedcomNode, PersonName, GedcomEvent, MediaObject } from '../model/types';
 
 function uuid(): UUID {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -33,6 +34,30 @@ function makeFamNode(xref: string, husbRef?: string, wifeRef?: string): GedcomNo
   if (husbRef) children.push({ level: 1, tag: 'HUSB', pointer: husbRef, value: undefined, xref: undefined, children: [] });
   if (wifeRef) children.push({ level: 1, tag: 'WIFE', pointer: wifeRef, value: undefined, xref: undefined, children: [] });
   return { level: 0, tag: 'FAM', xref, children, value: undefined, pointer: undefined };
+}
+
+const MIME_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif',
+  'image/webp': 'webp', 'image/tiff': 'tiff', 'image/bmp': 'bmp',
+};
+function extForType(mime: string): string {
+  return MIME_EXT[mime.toLowerCase()] ?? 'jpg';
+}
+
+/** Inline `1 OBJE / 2 FILE <path> / 2 FORM <ext>` block (the form the normalizer reads). */
+function makeObjeNode(path: string, ext: string): GedcomNode {
+  return {
+    level: 1, tag: 'OBJE', value: undefined, xref: undefined, pointer: undefined,
+    children: [
+      { level: 2, tag: 'FILE', value: path, xref: undefined, pointer: undefined, children: [] },
+      { level: 2, tag: 'FORM', value: ext, xref: undefined, pointer: undefined, children: [] },
+    ],
+  };
+}
+
+/** True if node is an inline OBJE whose FILE child points at `file`. */
+function isObjeFor(node: GedcomNode, file: string): boolean {
+  return node.tag === 'OBJE' && node.children.some((c) => c.tag === 'FILE' && c.value === file);
 }
 
 export interface PersonFormData {
@@ -233,6 +258,68 @@ export class EditService {
       void db.individuals.delete([treeId, id]);
       for (const uid of removedUnionIds) void db.unions.delete([treeId, uid]);
     }
+    this._scheduleWrite();
+  }
+
+  // ── Photos ────────────────────────────────────────────────────────────────
+
+  /**
+   * Set (add or replace) a person's primary photo from a local image Blob.
+   * Stores the full blob + a thumbnail in IndexedDB, records a MediaObject, and
+   * adds an inline `OBJE/FILE` to the raw record so the photo round-trips on
+   * export. Any existing primary photo is removed first.
+   * ponytail: object URLs for the replaced blob are revoked in bulk on
+   * navigation (MediaService.revokeAll), not per-replace.
+   */
+  async setPhoto(personId: UUID, file: Blob): Promise<void> {
+    const treeId = this.store.currentTreeId();
+    if (!treeId) return;
+    const indi = this.store.individuals().find((i) => i.id === personId);
+    if (!indi) return;
+
+    const oldId = indi.mediaIds[0];
+    const oldMeta = oldId ? await db.mediaMeta.get([treeId, oldId]) : undefined;
+
+    const mediaId = uuid();
+    const ext = extForType(file.type);
+    const path = `media/${mediaId}.${ext}`;
+    const thumb = await makeThumbnail(file).catch(() => null);
+    await db.mediaBlobs.put({ treeId, id: mediaId, blob: file, ...(thumb ? { thumb } : {}) });
+
+    const objeNode = makeObjeNode(path, ext);
+    const media: MediaObject = {
+      id: mediaId, form: ext, file: path,
+      links: [{ targetId: personId, isPrimary: true }], rawRef: objeNode,
+    };
+    await db.mediaMeta.put({ treeId, id: mediaId, data: media });
+
+    if (oldId) {
+      await db.mediaBlobs.delete([treeId, oldId]);
+      await db.mediaMeta.delete([treeId, oldId]);
+    }
+    if (indi.rawRef) {
+      if (oldMeta?.data?.file) indi.rawRef.children = indi.rawRef.children.filter((c) => !isObjeFor(c, oldMeta.data.file!));
+      indi.rawRef.children.push(objeNode);
+    }
+    this.store.upsertIndividual({ ...indi, mediaIds: [mediaId, ...indi.mediaIds.filter((m) => m !== oldId)] });
+    this._scheduleWrite();
+  }
+
+  /** Remove a person's primary photo: blob, metadata, and its raw `OBJE`. */
+  async removePhoto(personId: UUID): Promise<void> {
+    const treeId = this.store.currentTreeId();
+    if (!treeId) return;
+    const indi = this.store.individuals().find((i) => i.id === personId);
+    if (!indi || !indi.mediaIds.length) return;
+
+    const oldId = indi.mediaIds[0];
+    const oldMeta = await db.mediaMeta.get([treeId, oldId]);
+    await db.mediaBlobs.delete([treeId, oldId]);
+    await db.mediaMeta.delete([treeId, oldId]);
+    if (indi.rawRef && oldMeta?.data?.file) {
+      indi.rawRef.children = indi.rawRef.children.filter((c) => !isObjeFor(c, oldMeta.data.file!));
+    }
+    this.store.upsertIndividual({ ...indi, mediaIds: indi.mediaIds.slice(1) });
     this._scheduleWrite();
   }
 

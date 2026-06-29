@@ -2,6 +2,8 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TreeStore } from '../../core/tree-store/tree.store';
 import { EditService, PersonFormData } from '../../core/edit/edit.service';
+import { MediaService } from '../../media/media.service';
+import { MAX_MEDIA_BYTES } from '../../gedcom/gedzip/gedzip';
 import { Individual, GedcomNode } from '../../core/model/types';
 
 type ConnectKind = 'parent' | 'partner' | 'child';
@@ -163,6 +165,25 @@ function indi2form(indi: Individual): PersonFormData {
             </ul>
           }
           @if (state() !== 'new') {
+            <div class="field-group-label">Photo</div>
+            <div class="photo-row">
+              @if (photoUrl(); as url) {
+                <img class="photo-thumb" [src]="url" alt="Photo of this person" />
+              } @else {
+                <div class="photo-placeholder" aria-hidden="true">No photo</div>
+              }
+              <div class="photo-actions">
+                <label class="rel-btn photo-pick">
+                  {{ photoUrl() ? 'Replace photo' : 'Add photo' }}
+                  <input type="file" accept="image/*" hidden (change)="onPickPhoto($event)" />
+                </label>
+                @if (photoUrl()) {
+                  <button type="button" class="delete-link" (click)="onRemovePhoto()">Remove photo</button>
+                }
+              </div>
+            </div>
+          }
+          @if (state() !== 'new') {
             <div class="field-group-label">Add relative</div>
             <div class="relatives">
               <button type="button" class="rel-btn" (click)="addRelative('parent')">+ Parent</button>
@@ -255,6 +276,18 @@ function indi2form(indi: Individual): PersonFormData {
       font-size: 0.875rem; color: var(--ink); cursor: pointer;
       &:hover { border-color: var(--accent); color: var(--accent); }
     }
+    .photo-row { display: flex; align-items: center; gap: 0.875rem; }
+    .photo-thumb {
+      width: 72px; height: 72px; object-fit: cover;
+      border-radius: 8px; border: 1px solid var(--line); background: var(--paper-2);
+    }
+    .photo-placeholder {
+      width: 72px; height: 72px; display: flex; align-items: center; justify-content: center;
+      border-radius: 8px; border: 1px dashed var(--line); background: var(--paper-2);
+      font-size: 0.75rem; color: var(--ink-soft); text-align: center;
+    }
+    .photo-actions { display: flex; flex-direction: column; gap: 0.4rem; align-items: flex-start; }
+    .photo-pick { cursor: pointer; }
     .danger-row {
       display: flex; align-items: center; gap: 0.625rem;
       margin-top: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--line);
@@ -306,6 +339,15 @@ function indi2form(indi: Individual): PersonFormData {
 export class PersonEditorComponent {
   private readonly store = inject(TreeStore);
   private readonly editService = inject(EditService);
+  protected readonly media = inject(MediaService);
+
+  /** The person's primary photo as a local object URL, or null. */
+  readonly photoUrl = computed(() => {
+    const id = this.state();
+    if (id === 'closed' || id === 'new') return null;
+    const indi = this.store.individuals().find((i) => i.id === id);
+    return this.media.avatar(this.store.currentTreeId(), indi?.mediaIds[0])();
+  });
 
   // 'closed' | 'new' | '<person id>'
   readonly state = signal<'closed' | 'new' | string>('closed');
@@ -376,6 +418,29 @@ export class PersonEditorComponent {
       : kind === 'sibling' ? this.editService.addSibling(id)
       : this.editService.addChild(id);
     this.open(newId);
+  }
+
+  /** Add or replace the edited person's photo from a chosen image file. */
+  async onPickPhoto(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = ''; // allow re-picking the same file later
+    const id = this.state();
+    if (!file || id === 'closed' || id === 'new') return;
+    if (!file.type.startsWith('image/')) { this.error.set('Please choose an image file.'); return; }
+    if (file.size > MAX_MEDIA_BYTES) {
+      this.error.set(`Image too large (max ${Math.round(MAX_MEDIA_BYTES / 1e6)} MB).`);
+      return;
+    }
+    this.error.set(null);
+    await this.editService.setPhoto(id, file);
+  }
+
+  /** Remove the edited person's photo. */
+  async onRemovePhoto(): Promise<void> {
+    const id = this.state();
+    if (id === 'closed' || id === 'new') return;
+    await this.editService.removePhoto(id);
   }
 
   startConnect(kind: ConnectKind): void {
