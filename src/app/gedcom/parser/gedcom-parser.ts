@@ -50,11 +50,24 @@ function parseByLine(text: string): { nodes: GedcomNode[]; warnings: ParseWarnin
       continue;
     }
     const level = parseInt(m[1], 10);
+    const tag = m[3];
     const rawValue = m[4]?.trim();
+
+    // CONT/CONC fold into parent value (v7 uses CONT only; 5.5.1 used both)
+    if ((tag === 'CONT' || tag === 'CONC') && stack.length > 0) {
+      const parent = stack[stack.length - 1];
+      if (tag === 'CONT') {
+        parent.value = (parent.value ? parent.value + '\n' : '') + (rawValue ?? '');
+      } else {
+        parent.value = (parent.value ?? '') + (rawValue ?? '');
+      }
+      continue;
+    }
+
     const isPointerRef = !!rawValue && /^@[^@]+@$/.test(rawValue);
     const node: GedcomNode = {
       level,
-      tag: m[3],
+      tag,
       xref: m[2] || undefined,
       pointer: isPointerRef ? rawValue : undefined,
       value: !isPointerRef ? rawValue : undefined,

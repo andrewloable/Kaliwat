@@ -25,9 +25,12 @@ function childNodes(node: GedcomNode, tag: string): GedcomNode[] {
 }
 
 function parseEvent(node: GedcomNode): GedcomEvent {
+  const dateNode = node.children.find((c) => c.tag === 'DATE');
+  // v7: DATE value may be empty; fall back to PHRASE subdirectory (human-readable text)
+  const date = dateNode?.value || dateNode?.children.find((c) => c.tag === 'PHRASE')?.value;
   return {
     type: node.tag,
-    date: childValue(node, 'DATE'),
+    date,
     place: childValue(node, 'PLAC'),
     citations: childNodes(node, 'SOUR').map((s) => s.pointer ?? s.value ?? ''),
     notes: childNodes(node, 'NOTE').map((n) => n.value ?? ''),
@@ -68,18 +71,26 @@ export function normalizeAst(ast: GedcomNode[]): NormalizeResult {
   const indiNodes = findChildren(ast, 'INDI');
   const famNodes = findChildren(ast, 'FAM');
   const objeNodes = findChildren(ast, 'OBJE');
+  const snoteNodes = findChildren(ast, 'SNOTE'); // v7 shared notes
 
-  // First pass: allocate UUIDs for all records
-  for (const node of [...indiNodes, ...famNodes, ...objeNodes]) {
+  // First pass: allocate UUIDs for all records (including v7 SNOTE)
+  for (const node of [...indiNodes, ...famNodes, ...objeNodes, ...snoteNodes]) {
     if (node.xref) {
       const id = crypto_uuid();
       pt.register(node.xref, id);
     }
   }
 
+  // v7 SNOTE text lookup (xref → text value)
+  const snoteText = new Map<string, string>();
+  for (const node of snoteNodes) {
+    if (node.xref) snoteText.set(node.xref, node.value ?? '');
+  }
+
   // Resolve a pointer, reporting orphans
   const resolve = (xref: string | undefined): UUID | undefined => {
     if (!xref) return undefined;
+    if (xref === '@VOID@') return undefined; // v7 explicitly-void pointer — not an orphan
     const id = pt.getUuid(xref);
     if (!id) {
       if (!report.orphanPointers.includes(xref)) {
@@ -101,7 +112,9 @@ export function normalizeAst(ast: GedcomNode[]): NormalizeResult {
     const mediaIds = childNodes(node, 'OBJE')
       .map((o) => resolve(o.pointer ?? o.value))
       .filter((id): id is UUID => id !== undefined);
-    const notes = childNodes(node, 'NOTE').map((n) => n.value ?? '');
+    const notes = childNodes(node, 'NOTE').map((n) =>
+      n.value ?? (n.pointer ? (snoteText.get(n.pointer) ?? '') : ''),
+    );
 
     // Validate FAMS/FAMC pointers for orphan detection
     for (const tag of ['FAMS', 'FAMC']) {

@@ -29,6 +29,7 @@ export interface MediaBlobRecord {
   treeId: string;
   id: string;
   blob: Blob;
+  thumb?: Blob; // thumbnail blob (webp, max 300px)
 }
 
 export interface RawAstRecord {

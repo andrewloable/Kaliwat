@@ -1,0 +1,65 @@
+.tree-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 56px);
+  overflow: hidden;
+}
+
+.tree-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+  flex-shrink: 0;
+}
+
+.mode-btn {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  cursor: pointer;
+
+  &.active {
+    background: var(--paper-2);
+    color: var(--ink);
+    border-color: var(--ink-soft);
+  }
+}
+
+.recenter-btn {
+  margin-left: auto;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.tree-svg {
+  flex: 1;
+  cursor: grab;
+  user-select: none;
+  background: var(--paper);
+
+  &:active { cursor: grabbing; }
+}
+
+.card-node {
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: none;
+
+    rect:first-of-type {
+      stroke: var(--focus) !important;
+      stroke-width: 3 !important;
+    }
+  }
+}

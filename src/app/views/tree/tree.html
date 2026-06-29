@@ -1,0 +1,94 @@
+<div class="tree-container">
+  <div class="tree-toolbar">
+    @if (!store.isEmpty()) {
+      <button class="mode-btn" [class.active]="mode() === 'pedigree'" (click)="mode.set('pedigree')">Ancestors</button>
+      <button class="mode-btn" [class.active]="mode() === 'descendants'" (click)="mode.set('descendants')">Descendants</button>
+      <button class="mode-btn" [class.active]="mode() === 'family'" (click)="mode.set('family')">Family</button>
+    }
+    <button class="recenter-btn" title="Recenter" (click)="recenter()">⊙ Recenter</button>
+  </div>
+
+  <svg #svgEl class="tree-svg" aria-label="Family tree diagram">
+    <g #chartLayer>
+      @if (mode() !== 'family') {
+        @for (edge of layout().edges; track edge.id) {
+          <path class="tree-edge" [attr.d]="edgePath(edge)"
+            fill="none" stroke="var(--line)" stroke-width="1.5"/>
+        }
+        @for (node of layout().nodes; track node.id) {
+          <g class="card-node" [class.focus-node]="node.isFocus"
+             [attr.transform]="'translate(' + node.x + ',' + node.y + ')'"
+             role="button" tabindex="0"
+             [attr.aria-label]="displayName(node.person)"
+             (click)="setFocus(node.id)"
+             (keydown.enter)="setFocus(node.id)"
+             (keydown.space)="setFocus(node.id)">
+            <rect [attr.width]="CARD_W" [attr.height]="CARD_H" rx="8"
+              fill="var(--card)"
+              [attr.stroke]="node.isFocus ? 'var(--accent)' : 'var(--line)'"
+              [attr.stroke-width]="node.isFocus ? 2 : 1"/>
+            <circle cx="33" cy="43" r="21" fill="var(--paper-2)"/>
+            <text x="33" y="43" text-anchor="middle" dominant-baseline="central"
+              font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif"
+              font-size="13" fill="var(--ink-soft)">{{initials(node.person)}}</text>
+            <text x="64" y="28"
+              font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif"
+              font-size="14" fill="var(--ink)">{{displayName(node.person)}}</text>
+            <text x="64" y="50"
+              font-family="'Avenir Next','Segoe UI',Helvetica,Arial,sans-serif"
+              font-size="12" fill="var(--ink-soft)">{{years(node.person)}}</text>
+          </g>
+        }
+        @if (layout().nodes.length === 0) {
+          <text x="40" y="60"
+            font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif"
+            font-size="18" fill="var(--ink-soft)">Import a tree from the List view to see the family tree.</text>
+        }
+      } @else {
+        <!-- Family / DAG mode: union nodes + person cards -->
+        @for (edge of dagLayout().edges; track edge.id) {
+          <path class="tree-edge" [attr.d]="dagEdgePath(edge)"
+            fill="none" stroke="var(--line)" stroke-width="1.5"/>
+        }
+        @for (node of personNodes(dagLayout().nodes); track node.id) {
+          <g class="card-node" [class.focus-node]="node.isFocus"
+             [attr.transform]="'translate(' + node.x + ',' + node.y + ')'"
+             role="button" tabindex="0"
+             [attr.aria-label]="displayName(node.person!)"
+             (click)="setFocus(node.person!.id)"
+             (keydown.enter)="setFocus(node.person!.id)"
+             (keydown.space)="setFocus(node.person!.id)">
+            <rect [attr.width]="CARD_W" [attr.height]="CARD_H" rx="8"
+              fill="var(--card)"
+              [attr.stroke]="node.isFocus ? 'var(--accent)' : 'var(--line)'"
+              [attr.stroke-width]="node.isFocus ? 2 : 1"/>
+            <circle cx="33" cy="43" r="21" fill="var(--paper-2)"/>
+            <text x="33" y="43" text-anchor="middle" dominant-baseline="central"
+              font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif"
+              font-size="13" fill="var(--ink-soft)">{{initials(node.person!)}}</text>
+            <text x="64" y="28"
+              font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif"
+              font-size="14" fill="var(--ink)">{{displayName(node.person!)}}</text>
+            <text x="64" y="50"
+              font-family="'Avenir Next','Segoe UI',Helvetica,Arial,sans-serif"
+              font-size="12" fill="var(--ink-soft)">{{years(node.person!)}}</text>
+          </g>
+        }
+        @for (node of unionNodes(dagLayout().nodes); track node.id) {
+          <!-- Union node: accent-ringed circle with ⚭ symbol -->
+          <circle class="union-node"
+            [attr.cx]="node.x" [attr.cy]="node.y" [attr.r]="UNION_R"
+            fill="var(--paper-2)" stroke="var(--accent)" stroke-width="2"/>
+          <text [attr.x]="node.x" [attr.y]="node.y"
+            text-anchor="middle" dominant-baseline="central"
+            font-size="13" fill="var(--accent)" aria-hidden="true">⚭</text>
+        }
+        @if (dagLayout().nodes.length === 0) {
+          <text x="40" y="60"
+            font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif"
+            font-size="18" fill="var(--ink-soft)">Import a tree from the List view to see the family tree.</text>
+        }
+      }
+    </g>
+  </svg>
+</div>

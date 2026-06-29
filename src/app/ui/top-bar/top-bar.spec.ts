@@ -1,10 +1,12 @@
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { TopBarComponent } from './top-bar';
 
 describe('TopBarComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [TopBarComponent],
+      providers: [provideRouter([])],
     }).compileComponents();
   });
 

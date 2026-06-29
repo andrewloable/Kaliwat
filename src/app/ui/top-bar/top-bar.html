@@ -9,8 +9,12 @@
   </div>
 
   <nav class="view-tabs" role="tablist" aria-label="View">
-    <button role="tab" class="tab" [attr.aria-selected]="true" [class.active]="true">List</button>
-    <button role="tab" class="tab" [attr.aria-selected]="false">Tree</button>
+    <button role="tab" class="tab"
+      routerLink="/" [routerLinkActiveOptions]="{exact:true}" routerLinkActive="active"
+      #listTab="routerLinkActive" [attr.aria-selected]="listTab.isActive">List</button>
+    <button role="tab" class="tab"
+      routerLink="/tree" routerLinkActive="active"
+      #treeTab="routerLinkActive" [attr.aria-selected]="treeTab.isActive">Tree</button>
   </nav>
 
   <button class="import-btn" type="button">Import</button>
