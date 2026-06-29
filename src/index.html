@@ -7,8 +7,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- connect-src allows https so GEDCOM-referenced photos can be fetched once and
        cached locally; images still render only from blob:/data: (img-src), never a
-       remote <img>. See MediaService.avatar (fetch-once-then-local). -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https:; img-src 'self' blob: data:; font-src 'self'; object-src 'none'; base-uri 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:">
+       remote <img>. See MediaService.avatar (fetch-once-then-local). blob: is also
+       needed in connect-src because PDF export (svg2pdf) XHRs the cached avatar
+       blob: URLs to embed them. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https: blob:; img-src 'self' blob: data:; font-src 'self'; object-src 'none'; base-uri 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#2b2420">
