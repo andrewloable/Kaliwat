@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('app loads', async ({ page }) => {
+test('app loads and shows the top bar wordmark', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('h1')).toContainText('kaliwat');
+  await expect(page.locator('.wordmark')).toContainText('Kaliwat');
 });

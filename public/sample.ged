@@ -1,0 +1,50 @@
+0 HEAD
+1 SOUR Kaliwat
+2 VERS 1.0
+1 GEDC
+2 VERS 5.5.1
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Maria /Santos/
+1 GIVN Maria
+1 SURN Santos
+1 SEX F
+1 BIRT
+2 DATE 12 JUN 1945
+2 PLAC Manila, Philippines
+1 DEAT
+2 DATE 3 MAR 2018
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Jose /Reyes/
+1 GIVN Jose
+1 SURN Reyes
+1 SEX M
+1 BIRT
+2 DATE 4 APR 1940
+1 FAMS @F1@
+0 @I3@ INDI
+1 NAME Ana /Reyes/
+1 GIVN Ana
+1 SURN Reyes
+1 SEX F
+1 BIRT
+2 DATE 7 JAN 1968
+1 FAMC @F1@
+0 @I4@ INDI
+1 NAME Carlos /Reyes/
+1 GIVN Carlos
+1 SURN Reyes
+1 SEX M
+1 BIRT
+2 DATE 15 AUG 1970
+1 FAMC @F1@
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I1@
+1 CHIL @I3@
+1 CHIL @I4@
+1 MARR
+2 DATE 1966
+2 PLAC Manila, Philippines
+0 TRLR

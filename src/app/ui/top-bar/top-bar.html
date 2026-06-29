@@ -1,0 +1,17 @@
+<header class="top-bar" role="banner">
+  <span class="wordmark" aria-label="Kaliwat">Kaliwat</span>
+
+  <div class="search-slot">
+    <svg class="search-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+    </svg>
+    <input class="search-field" type="search" placeholder="Search people" aria-label="Search people" />
+  </div>
+
+  <nav class="view-tabs" role="tablist" aria-label="View">
+    <button role="tab" class="tab" [attr.aria-selected]="true" [class.active]="true">List</button>
+    <button role="tab" class="tab" [attr.aria-selected]="false">Tree</button>
+  </nav>
+
+  <button class="import-btn" type="button">Import</button>
+</header>

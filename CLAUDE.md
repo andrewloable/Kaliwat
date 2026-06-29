@@ -8,7 +8,7 @@ Never commit or push automatically. Only commit or push when the user explicitly
 
 ## Status
 
-**Not scaffolded yet.** The repo currently contains only `docs/family-tree-app-plan.md` — the full build plan. Read it before starting; it is the source of truth for scope, data model, and milestone order. This file summarizes the architecture so you don't have to re-derive it each session.
+**Scaffolded, no features yet.** Angular 20 standalone app is in place (`ng serve`/`ng build` via the Vite/esbuild `application` builder). Unit tests run on **Vitest** (`npm test`, via `@angular/build:unit-test` — Karma was removed); e2e on **Playwright** (`npm run e2e`, config in `playwright.config.ts`, specs in `e2e/`). Planned source layout exists empty under `src/app/{core,gedcom,media,layout,views,ui}` with `test/fixtures/`. `docs/family-tree-app-plan.md` is the source of truth for scope, data model, and milestone order — read it before starting. This file summarizes the architecture so you don't have to re-derive it each session.
 
 ## What this is
 

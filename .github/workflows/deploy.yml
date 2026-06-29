@@ -1,0 +1,44 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Build (for e2e)
+        run: npx ng build
+
+      - name: Unit tests
+        run: npx ng test
+        env:
+          CI: true
+
+      - name: E2e tests
+        run: npm run e2e
+
+      - name: Build for Pages (base-href=/Kaliwat/)
+        run: npx ng build --base-href=/Kaliwat/
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist/kaliwat/browser
