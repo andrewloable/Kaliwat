@@ -24,7 +24,7 @@ async function clearDb(page: Parameters<typeof test>[1]) {
 }
 
 async function importFile(page: Parameters<typeof test>[1], filePath: string) {
-  await page.locator('input[type="file"]').setInputFiles(filePath);
+  await page.locator('input[aria-label="Import a GEDCOM file"]').setInputFiles(filePath);
 }
 
 // 1771-person import takes ~35s; give generous budget but fail on hard freeze

@@ -32,7 +32,7 @@ async function importAndGoToTree(page: Parameters<typeof test>[1]) {
   await page.goto('/');
   await clearDb(page);
   await page.reload();
-  await page.locator('input[type="file"]').setInputFiles(SAMPLE_GDZ);
+  await page.locator('input[aria-label="Import a GEDCOM file"]').setInputFiles(SAMPLE_GDZ);
   await expect(page.locator('.list-row').first()).toBeVisible({ timeout: 60_000 });
   // SPA navigation — preserves in-memory store
   await page.locator('.tab').filter({ hasText: 'Tree' }).click();

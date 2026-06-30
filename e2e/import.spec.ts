@@ -5,7 +5,7 @@ const SAMPLE_GED = path.resolve(__dirname, '../test/fixtures/sample.ged');
 const MALFORMED_GED = path.resolve(__dirname, '../test/fixtures/malformed.ged');
 
 async function importFile(page: Page, filePath: string) {
-  const fileInput = page.locator('input[type="file"]');
+  const fileInput = page.locator('input[aria-label="Import a GEDCOM file"]');
   await fileInput.setInputFiles(filePath);
 }
 

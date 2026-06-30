@@ -23,7 +23,7 @@ test.describe('Zero-egress privacy', () => {
     await expect(page.locator('.wordmark')).toBeVisible();
 
     // Import a .ged file
-    const fileInput = page.locator('input[type="file"]');
+    const fileInput = page.locator('input[aria-label="Import a GEDCOM file"]');
     await fileInput.setInputFiles(SAMPLE_GED);
 
     // Wait for list to populate

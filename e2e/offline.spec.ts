@@ -22,7 +22,7 @@ test.describe('Service worker + offline', () => {
     await page.goto('/');
     await expect(page.locator('.wordmark')).toBeVisible();
 
-    const fileInput = page.locator('input[type="file"]');
+    const fileInput = page.locator('input[aria-label="Import a GEDCOM file"]');
     await fileInput.setInputFiles(SAMPLE_GED);
     await expect(page.locator('.list-row').first()).toBeVisible({ timeout: 10_000 });
 
