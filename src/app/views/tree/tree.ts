@@ -90,8 +90,9 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
     const uMap = new Map(unions.map(u => [u.id, u]));
     const mode = this.mode();
     if (mode === 'family') return { nodes: [], edges: [] }; // handled by dagLayout
-    if (mode === 'complete') return buildCompleteLayout(focusId, iMap, uMap);
-    return buildLayout(focusId, mode, iMap, uMap);
+    const vertical = this.familyOrientation() === 'vertical';
+    if (mode === 'complete') return buildCompleteLayout(focusId, iMap, uMap, undefined, vertical);
+    return buildLayout(focusId, mode, iMap, uMap, undefined, false, vertical);
   });
 
   /** Family view direction: generations left→right (default) or top→bottom. */
@@ -141,6 +142,10 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
   setFocus(id: string): void { this.focusId.set(id); }
 
   edgePath(e: LayoutEdge): string {
+    if (e.vertical) {
+      const my = (e.y1 + e.y2) / 2;
+      return `M${e.x1},${e.y1} C${e.x1},${my} ${e.x2},${my} ${e.x2},${e.y2}`;
+    }
     const mx = (e.x1 + e.x2) / 2;
     return `M${e.x1},${e.y1} C${mx},${e.y1} ${mx},${e.y2} ${e.x2},${e.y2}`;
   }

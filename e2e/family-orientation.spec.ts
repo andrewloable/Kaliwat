@@ -37,7 +37,8 @@ test('Family view switches between left→right and top→bottom', async ({ page
   // Top→bottom: the child sits below the focus person.
   expect(c2.y).toBeGreaterThan(f2.y);
 
-  // Orientation buttons hide outside Family mode.
+  // The toggle applies to every tree view: Ancestors goes top→bottom too.
   await page.getByRole('button', { name: 'Ancestors' }).click();
-  await expect(ttb).toHaveCount(0);
+  await expect(ttb).toHaveAttribute('aria-pressed', 'true');
+  await expect(ltr).toBeVisible();
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildLayout, buildCompleteLayout, CARD_W, CARD_H } from './pedigree-layout';
+import { buildLayout, buildCompleteLayout, CARD_W, CARD_H, LayoutNode } from './pedigree-layout';
 import { Individual, Union, UUID } from '../core/model/types';
 
 function makeIndi(id: UUID, given: string, unions: UUID[] = []): Individual {
@@ -142,6 +142,56 @@ describe('pedigree-layout', () => {
     expect(desc.nodes.map(n => n.id).sort()).toEqual(['FO', 'K1', 'K2', 'K3', 'K4']);
   });
 
+  it('vertical: descendants run downward and no cards overlap', () => {
+    const focus = makeIndi('FO', 'Focus', ['UC']);
+    const kids = ['K1', 'K2', 'K3'].map(id => makeIndi(id, id));
+    const individuals = new Map([['FO', focus], ...kids.map(k => [k.id, k] as const)]);
+    const unions = new Map([['UC', makeUnion('UC', ['FO'], kids.map(k => k.id))]]);
+
+    const layout = buildLayout('FO', 'descendants', individuals, unions, 4, false, true);
+    const y = (id: string) => layout.nodes.find(n => n.id === id)!.y;
+    for (const k of kids) expect(y(k.id)).toBeGreaterThan(y('FO'));
+    expectNoOverlap(layout.nodes);
+    expect(layout.edges.every(e => e.vertical)).toBe(true);
+  });
+
+  it('vertical ancestors: parents sit above the focus person', () => {
+    const individuals = new Map([
+      ['GP', makeIndi('GP', 'Grandparent', ['UA'])], ['PA', makeIndi('PA', 'Parent', ['UB'])], ['FO', makeIndi('FO', 'Focus')],
+    ]);
+    const unions = new Map([['UA', makeUnion('UA', ['GP'], ['PA'])], ['UB', makeUnion('UB', ['PA'], ['FO'])]]);
+    const layout = buildLayout('FO', 'pedigree', individuals, unions, 4, false, true);
+    const y = (id: string) => layout.nodes.find(n => n.id === id)!.y;
+    expect(y('PA')).toBeLessThan(y('FO'));
+    expect(y('GP')).toBeLessThan(y('PA'));
+    expect(Math.min(...layout.nodes.map(n => n.y))).toBeGreaterThanOrEqual(0);
+    expectNoOverlap(layout.nodes);
+    // the edge runs from the parent's bottom edge down to the focus person's top edge
+    const e = layout.edges.find(e => [e.sourceId, e.targetId].sort().join() === 'FO,PA')!;
+    expect(e.y1).toBeCloseTo(y('PA') + CARD_H);
+    expect(e.y2).toBeCloseTo(y('FO'));
+  });
+
+  it('vertical complete: ancestors sit above the focus, descendants below, no overlaps', () => {
+    const individuals = new Map([
+      ['GP', makeIndi('GP', 'Grandparent', ['UA'])], ['PA', makeIndi('PA', 'Parent', ['UB'])],
+      ['FO', makeIndi('FO', 'Focus', ['UC'])], ['CH', makeIndi('CH', 'Child')],
+    ]);
+    const unions = new Map([
+      ['UA', makeUnion('UA', ['GP'], ['PA'])],
+      ['UB', makeUnion('UB', ['PA'], ['FO'])],
+      ['UC', makeUnion('UC', ['FO'], ['CH'])],
+    ]);
+    const layout = buildCompleteLayout('FO', individuals, unions, 100, true);
+    const y = (id: string) => layout.nodes.find(n => n.id === id)!.y;
+    expect(y('GP')).toBeLessThan(y('PA'));
+    expect(y('PA')).toBeLessThan(y('FO'));
+    expect(y('FO')).toBeLessThan(y('CH'));
+    expect(Math.min(...layout.nodes.map(n => n.y))).toBeGreaterThanOrEqual(0);
+    expect(Math.min(...layout.nodes.map(n => n.x))).toBeGreaterThanOrEqual(0);
+    expectNoOverlap(layout.nodes);
+  });
+
   it('avoids infinite loop on circular reference (same person in two generations)', () => {
     // Person A is a parent AND appears as a child (GEDCOM inconsistency)
     const a = makeIndi('A', 'Alice', ['U1']);
@@ -157,3 +207,14 @@ describe('pedigree-layout', () => {
     expect(layout.nodes.length).toBeGreaterThan(0);
   });
 });
+
+/** No two cards may overlap, using the real card size (CARD_W × CARD_H). */
+function expectNoOverlap(nodes: LayoutNode[]): void {
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j];
+      const apart = a.x + CARD_W <= b.x || b.x + CARD_W <= a.x || a.y + CARD_H <= b.y || b.y + CARD_H <= a.y;
+      expect(apart, `${a.id} overlaps ${b.id}`).toBe(true);
+    }
+  }
+}
