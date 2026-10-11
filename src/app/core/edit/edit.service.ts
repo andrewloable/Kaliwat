@@ -60,6 +60,67 @@ function isObjeFor(node: GedcomNode, file: string): boolean {
   return node.tag === 'OBJE' && node.children.some((c) => c.tag === 'FILE' && c.value === file);
 }
 
+/**
+ * Everyone cut off from `personId` once their link to `unionId` is severed: people
+ * reachable from that union's other members but no longer from `personId`. Empty
+ * when another path (e.g. a cousin marriage) still joins the two sides.
+ */
+export function branchBeyond(unions: Union[], personId: UUID, unionId: UUID): UUID[] {
+  const cutUnion = unions.find((u) => u.id === unionId);
+  if (!cutUnion) return [];
+  const members = (u: Union) => [...u.spouseIds, ...u.childLinks.map((c) => c.childId)];
+  const byPerson = new Map<UUID, Union[]>();
+  for (const u of unions) for (const p of members(u)) byPerson.set(p, [...(byPerson.get(p) ?? []), u]);
+
+  const reach = (seeds: UUID[]): Set<UUID> => {
+    const seen = new Set(seeds);
+    const queue = [...seeds];
+    while (queue.length) {
+      const p = queue.pop()!;
+      for (const u of byPerson.get(p) ?? []) {
+        if (u.id === unionId && p === personId) continue; // the severed link
+        for (const q of members(u)) {
+          if (u.id === unionId && q === personId) continue;
+          if (!seen.has(q)) { seen.add(q); queue.push(q); }
+        }
+      }
+    }
+    return seen;
+  };
+
+  const kept = reach([personId]);
+  return [...reach(members(cutUnion).filter((p) => p !== personId))].filter((p) => !kept.has(p));
+}
+
+/**
+ * People not connected to the main tree, as connected groups (largest first). The
+ * main tree is the largest connected group; every other group, whether a lone
+ * person or a few people linked only to each other, is an orphan group.
+ * ponytail: "main" = largest group, ties go to the first found; add a pinned home
+ * person if users need to pick which tree is main.
+ */
+export function orphanGroups(individuals: Individual[], unions: Union[]): UUID[][] {
+  const adj = new Map<UUID, UUID[]>(individuals.map((i) => [i.id, []]));
+  for (const u of unions) {
+    const members = [...u.spouseIds, ...u.childLinks.map((c) => c.childId)];
+    for (const p of members) adj.get(p)?.push(...members);
+  }
+  const seen = new Set<UUID>();
+  const groups: UUID[][] = [];
+  for (const { id } of individuals) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const group = [id];
+    for (let k = 0; k < group.length; k++) {
+      for (const q of adj.get(group[k])!) {
+        if (!seen.has(q) && adj.has(q)) { seen.add(q); group.push(q); }
+      }
+    }
+    groups.push(group);
+  }
+  return groups.sort((a, b) => b.length - a.length).slice(1);
+}
+
 export interface PersonFormData {
   given: string;
   surname: string;
@@ -228,12 +289,34 @@ export class EditService {
    * deletes can't coalesce a removal away.
    */
   deleteIndividual(id: UUID): void {
+    this._removePeople(new Set([id]));
+  }
+
+  /** Delete several people at once (e.g. orphan groups), with deleteIndividual's cleanup. */
+  deletePeople(ids: UUID[]): void {
+    this._removePeople(new Set(ids));
+  }
+
+  /**
+   * Trim a branch: sever `personId`'s link to `unionId` and delete everyone who is
+   * no longer connected to `personId` through any other path (see branchBeyond).
+   * Returns how many people were removed.
+   */
+  trimBranch(personId: UUID, unionId: UUID): number {
+    const gone = branchBeyond(this.store.unions(), personId, unionId);
+    this._removePeople(new Set(gone), { personId, unionId });
+    return gone.length;
+  }
+
+  /** Remove `ids` (and optionally one person↔union link) with deleteIndividual's cleanup rules. */
+  private _removePeople(ids: Set<UUID>, cut?: { personId: UUID; unionId: UUID }): void {
+    const drop = (unionId: UUID, p: UUID) => ids.has(p) || (unionId === cut?.unionId && p === cut.personId);
     const removedUnionIds: UUID[] = [];
     const keptUnions = this.store.unions()
       .map((u) => ({
         ...u,
-        spouseIds: u.spouseIds.filter((s) => s !== id),
-        childLinks: u.childLinks.filter((c) => c.childId !== id),
+        spouseIds: u.spouseIds.filter((s) => !drop(u.id, s)),
+        childLinks: u.childLinks.filter((c) => !drop(u.id, c.childId)),
       }))
       .filter((u) => {
         if (u.spouseIds.length + u.childLinks.length >= 2) return true;
@@ -242,21 +325,24 @@ export class EditService {
       });
 
     const removed = new Set(removedUnionIds);
+    const stale = (i: Individual, unionId: UUID) => removed.has(unionId) || drop(unionId, i.id);
     const individuals = this.store.individuals()
-      .filter((i) => i.id !== id)
+      .filter((i) => !ids.has(i.id))
       .map((i) =>
-        i.unions.some((r) => removed.has(r.unionId))
-          ? { ...i, unions: i.unions.filter((r) => !removed.has(r.unionId)) }
+        i.unions.some((r) => stale(i, r.unionId))
+          ? { ...i, unions: i.unions.filter((r) => !stale(i, r.unionId)) }
           : i,
       );
 
     this.store.setIndividuals(individuals);
     this.store.setUnions(keptUnions);
 
+    // ponytail: removed people's photos stay in IndexedDB (and in exports), same as before
+    // trim existed; clean them when media can be proven unshared (FAM/SOUR OBJE refs aren't modelled).
     const treeId = this.store.currentTreeId();
     if (treeId) {
-      void db.individuals.delete([treeId, id]);
-      for (const uid of removedUnionIds) void db.unions.delete([treeId, uid]);
+      void db.individuals.bulkDelete([...ids].map((id): [string, string] => [treeId, id]));
+      void db.unions.bulkDelete(removedUnionIds.map((uid): [string, string] => [treeId, uid]));
     }
     this._scheduleWrite();
   }

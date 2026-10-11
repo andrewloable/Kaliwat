@@ -6,6 +6,7 @@ import { SearchService } from '../../core/search/search.service';
 import { fold, matchesTerms } from '../../core/search/search-util';
 import { MediaService } from '../../media/media.service';
 import { PersonEditorComponent } from '../../ui/person-editor/person-editor';
+import { OrphansComponent } from '../../ui/orphans/orphans';
 import { Individual } from '../../core/model/types';
 
 export interface ListRow {
@@ -44,7 +45,7 @@ function toRow(indi: Individual): ListRow {
 
 @Component({
   selector: 'app-list',
-  imports: [ScrollingModule, PersonEditorComponent],
+  imports: [ScrollingModule, PersonEditorComponent, OrphansComponent],
   template: `
     <div class="list-shell">
       @if (store.importStatus().kind === 'importing') {
@@ -60,6 +61,8 @@ function toRow(indi: Individual): ListRow {
           </div>
         }
       }
+
+      <app-orphans />
 
       @if (store.isEmpty()) {
         <div class="empty-state">
