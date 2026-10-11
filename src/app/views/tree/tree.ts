@@ -90,13 +90,15 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
     const uMap = new Map(unions.map(u => [u.id, u]));
     const mode = this.mode();
     if (mode === 'family') return { nodes: [], edges: [] }; // handled by dagLayout
-    const vertical = this.familyOrientation() === 'vertical';
-    if (mode === 'complete') return buildCompleteLayout(focusId, iMap, uMap, undefined, vertical);
-    return buildLayout(focusId, mode, iMap, uMap, undefined, false, vertical);
+    const orientation = this.familyOrientation();
+    const vertical = orientation === 'vertical';
+    const compact = orientation === 'compact';
+    if (mode === 'complete') return buildCompleteLayout(focusId, iMap, uMap, undefined, vertical, compact);
+    return buildLayout(focusId, mode, iMap, uMap, undefined, false, vertical, compact);
   });
 
   /** Family view direction: generations left→right (default) or top→bottom. */
-  readonly familyOrientation = signal<'horizontal' | 'vertical'>('horizontal');
+  readonly familyOrientation = signal<'horizontal' | 'vertical' | 'compact'>('horizontal');
 
   readonly dagLayout = computed(() => {
     const focusId = this.focusId();
@@ -107,7 +109,7 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
     }
     const iMap = new Map(individuals.map(i => [i.id, i]));
     const uMap = new Map(unions.map(u => [u.id, u]));
-    return buildDagLayout(focusId, iMap, uMap, this.familyOrientation() === 'horizontal');
+    return buildDagLayout(focusId, iMap, uMap, this.familyOrientation() !== 'vertical');
   });
 
   ngAfterViewInit(): void {

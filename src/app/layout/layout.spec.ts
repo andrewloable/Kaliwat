@@ -192,6 +192,57 @@ describe('pedigree-layout', () => {
     expectNoOverlap(layout.nodes);
   });
 
+  describe('compact', () => {
+    // one couple with 12 children, each child with one grandchild
+    const kids = Array.from({ length: 12 }, (_, i) => `K${i}`);
+    const individuals = new Map<UUID, Individual>([
+      ['FO', makeIndi('FO', 'Focus', ['UC'])],
+      ...kids.map(k => [k, makeIndi(k, k, [`U${k}`])] as const),
+      ...kids.map(k => [`G${k}`, makeIndi(`G${k}`, `G${k}`)] as const),
+    ]);
+    const unions = new Map<UUID, Union>([
+      ['UC', makeUnion('UC', ['FO'], kids)],
+      ...kids.map(k => [`U${k}`, makeUnion(`U${k}`, [k], [`G${k}`])] as const),
+    ]);
+    const height = (l: { nodes: LayoutNode[] }) => Math.max(...l.nodes.map(n => n.y)) + CARD_H;
+
+    it('wraps a family with many children into side-by-side columns', () => {
+      const compact = buildLayout('FO', 'descendants', individuals, unions, 4, false, false, true);
+      const xs = new Set(kids.map(k => compact.nodes.find(n => n.id === k)!.x));
+      expect(xs.size).toBe(3); // 12 children, at most 4 per column
+    });
+
+    it('is shorter than the normal left→right layout of the same tree', () => {
+      const normal = buildLayout('FO', 'descendants', individuals, unions);
+      const compact = buildLayout('FO', 'descendants', individuals, unions, 4, false, false, true);
+      expect(height(compact)).toBeLessThan(height(normal) * 0.6);
+    });
+
+    it('has no overlapping cards and every link leaves the parent\'s right edge', () => {
+      const compact = buildLayout('FO', 'descendants', individuals, unions, 4, false, false, true);
+      expectNoOverlap(compact.nodes);
+      const parent = compact.nodes.find(n => n.id === 'FO')!;
+      const kidEdges = compact.edges.filter(e => e.sourceId === 'FO');
+      expect(kidEdges).toHaveLength(kids.length);
+      for (const e of kidEdges) expect(e.x1).toBeCloseTo(parent.x + CARD_W);
+    });
+
+    it('complete compact keeps ancestors and descendants apart with no overlaps', () => {
+      const ind = new Map(individuals);
+      ind.set('PA', makeIndi('PA', 'Parent', ['UP']));
+      ind.set('GP', makeIndi('GP', 'Grandparent'));
+      const un = new Map(unions);
+      un.set('UP', makeUnion('UP', ['PA'], ['FO']));
+      un.set('UG', makeUnion('UG', ['GP'], ['PA']));
+      const layout = buildCompleteLayout('FO', ind, un, 100, false, true);
+      const x = (id: string) => layout.nodes.find(n => n.id === id)!.x;
+      expect(x('GP')).toBeLessThan(x('PA'));
+      expect(x('PA')).toBeLessThan(x('FO'));
+      expect(x('FO')).toBeLessThan(x('K0'));
+      expectNoOverlap(layout.nodes);
+    });
+  });
+
   it('avoids infinite loop on circular reference (same person in two generations)', () => {
     // Person A is a parent AND appears as a child (GEDCOM inconsistency)
     const a = makeIndi('A', 'Alice', ['U1']);

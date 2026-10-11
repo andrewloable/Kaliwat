@@ -115,12 +115,14 @@ export function buildLayout(
   maxDepth = 4,
   withSpouses = false,
   vertical = false,
+  compact = false,
 ): LayoutData {
   const rootDatum = mode === 'pedigree'
     ? ancestorDatum(focusId, individuals, unions, maxDepth)
     : descendantDatum(focusId, individuals, unions, maxDepth, new Set(), withSpouses);
 
   if (!rootDatum) return { nodes: [], edges: [] };
+  if (compact) return packTree(rootDatum, focusId);
 
   // Card size along the sibling and generation axes of the local (left→right) layout.
   const CW = vertical ? CARD_H : CARD_W;
@@ -200,9 +202,10 @@ export function buildCompleteLayout(
   unions: Map<UUID, Union>,
   maxDepth = 100,
   vertical = false,
+  compact = false,
 ): LayoutData {
-  const desc = buildLayout(focusId, 'descendants', individuals, unions, maxDepth, true, vertical);
-  const anc = buildLayout(focusId, 'pedigree', individuals, unions, maxDepth, false, vertical);
+  const desc = buildLayout(focusId, 'descendants', individuals, unions, maxDepth, true, vertical, compact);
+  const anc = buildLayout(focusId, 'pedigree', individuals, unions, maxDepth, false, vertical, compact);
   if (desc.nodes.length === 0) return { nodes: [], edges: [] };
 
   const dFocus = desc.nodes.find(n => n.isFocus)!;
@@ -244,3 +247,89 @@ export function buildCompleteLayout(
 
   return { nodes, edges };
 }
+
+// ── Compact layout ──────────────────────────────────────────────────────────
+// Left→right like the default, but with tighter gaps, and a family with more than
+// COMPACT_WRAP children is split into side-by-side columns, so the tree grows
+// sideways instead of into one very long column. Card size and text are unchanged.
+export const COMPACT_H_GAP = 28;   // between generations
+export const COMPACT_V_GAP = 12;   // between siblings in one column
+export const COMPACT_SUB_GAP = 28; // between a family's side-by-side columns
+export const COMPACT_WRAP = 4;     // most children in one column before wrapping
+
+interface Measured { w: number; h: number; groups: Datum[][]; offsets: number[] }
+
+/** Children with partnerless family slots removed, so their children hang off the person. */
+function visibleChildren(d: Datum): Datum[] {
+  return (d.children ?? []).flatMap(c => (c.person ? [c] : visibleChildren(c)));
+}
+
+/** Split children into columns of at most COMPACT_WRAP, as evenly as possible. */
+function splitGroups(kids: Datum[]): Datum[][] {
+  if (kids.length === 0) return [];
+  if (kids.length <= COMPACT_WRAP) return [kids];
+  const m = Math.ceil(kids.length / COMPACT_WRAP);
+  const groups: Datum[][] = [];
+  let start = 0;
+  for (let j = 0; j < m; j++) {
+    const size = Math.floor(kids.length / m) + (j < kids.length % m ? 1 : 0);
+    groups.push(kids.slice(start, start + size));
+    start += size;
+  }
+  return groups;
+}
+
+/** Pack a tree left→right with compact spacing and wrapped families. */
+function packTree(root: Datum, focusId: UUID): LayoutData {
+  const memo = new Map<Datum, Measured>();
+  // Width/height of a subtree, measured from its own card's top-left corner.
+  const measure = (d: Datum): Measured => {
+    const hit = memo.get(d);
+    if (hit) return hit;
+    const groups = splitGroups(visibleChildren(d));
+    const offsets: number[] = [];
+    let off = CARD_W + COMPACT_H_GAP;
+    let right = CARD_W;
+    let blockH = CARD_H;
+    for (const g of groups) {
+      offsets.push(off);
+      const gw = Math.max(...g.map(c => measure(c).w));
+      const gh = g.reduce((sum, c) => sum + measure(c).h, 0) + (g.length - 1) * COMPACT_V_GAP;
+      right = Math.max(right, off + gw);
+      blockH = Math.max(blockH, gh);
+      off += gw + COMPACT_SUB_GAP;
+    }
+    const m = { w: right, h: blockH, groups, offsets };
+    memo.set(d, m);
+    return m;
+  };
+
+  const nodes: LayoutNode[] = [];
+  const edges: LayoutEdge[] = [];
+  // Place a card at (X, Y) — Y is the top of its block; the card is centred in it.
+  const place = (d: Datum, X: number, Y: number, depth: number): void => {
+    const m = measure(d);
+    const y = Y + (m.h - CARD_H) / 2;
+    nodes.push({ id: d.id, person: d.person!, x: X, y, depth, isFocus: d.id === focusId });
+    m.groups.forEach((g, j) => {
+      let cy = Y;
+      for (const c of g) {
+        const cm = measure(c);
+        const cx = X + m.offsets[j];
+        const childY = cy + (cm.h - CARD_H) / 2;
+        edges.push({
+          id: `${d.id}-${c.id}`, sourceId: d.id, targetId: c.id,
+          x1: X + CARD_W, y1: y + CARD_H / 2,
+          x2: cx, y2: childY + CARD_H / 2,
+          ...(c.spouse ? { spouse: true } : {}),
+        });
+        place(c, cx, cy, depth + 1);
+        cy += cm.h + COMPACT_V_GAP;
+      }
+    });
+  };
+
+  place(root, 0, 0, 0);
+  return { nodes, edges };
+}
+

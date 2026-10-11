@@ -37,6 +37,14 @@ test('Family view switches between left→right and top→bottom', async ({ page
   // Top→bottom: the child sits below the focus person.
   expect(c2.y).toBeGreaterThan(f2.y);
 
+  // Compact is the third option and keeps the left→right flow.
+  const compactBtn = page.getByRole('button', { name: '▦ Compact' });
+  await compactBtn.click();
+  await expect(compactBtn).toHaveAttribute('aria-pressed', 'true');
+  const c3 = await pos(child);
+  expect(c3.x).toBeGreaterThan((await pos(focus)).x);
+  await ttb.click();
+
   // The toggle applies to every tree view: Ancestors goes top→bottom too.
   await page.getByRole('button', { name: 'Ancestors' }).click();
   await expect(ttb).toHaveAttribute('aria-pressed', 'true');

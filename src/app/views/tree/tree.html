@@ -11,6 +11,9 @@
         [attr.aria-pressed]="familyOrientation() === 'horizontal'" (click)="familyOrientation.set('horizontal')">→ Left to right</button>
       <button class="mode-btn orient-btn" [class.active]="familyOrientation() === 'vertical'"
         [attr.aria-pressed]="familyOrientation() === 'vertical'" (click)="familyOrientation.set('vertical')">↓ Top to bottom</button>
+      <button class="mode-btn orient-btn" [class.active]="familyOrientation() === 'compact'"
+        [attr.aria-pressed]="familyOrientation() === 'compact'" (click)="familyOrientation.set('compact')"
+        title="Tighter spacing; large families wrap into side-by-side columns">▦ Compact</button>
     }
     <button class="recenter-btn" title="Recenter" (click)="recenter()">⊙ Recenter</button>
   </div>
