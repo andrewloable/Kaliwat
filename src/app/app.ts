@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { TopBarComponent } from './ui/top-bar/top-bar';
+import { version } from '../../package.json';
 
 @Component({
   selector: 'app-root',
@@ -8,4 +9,6 @@ import { TopBarComponent } from './ui/top-bar/top-bar';
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
-export class App {}
+export class App {
+  protected readonly version = version;
+}

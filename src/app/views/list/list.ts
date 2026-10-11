@@ -128,9 +128,9 @@ function toRow(indi: Individual): ListRow {
     </div>
   `,
   styles: [`
-    .list-shell { display: flex; flex-direction: column; height: calc(100vh - 56px); position: relative; }
+    .list-shell { display: flex; flex-direction: column; height: calc(100vh - 56px - var(--footer-h)); position: relative; }
 
-    .scroll-viewport { flex: 1; height: calc(100vh - 56px); }
+    .scroll-viewport { flex: 1; height: calc(100vh - 56px - var(--footer-h)); }
 
     .importing-state {
       padding: 0.5rem 1.25rem;
@@ -192,7 +192,7 @@ function toRow(indi: Individual): ListRow {
     /* Empty state / drop zone */
     .empty-state {
       display: flex; align-items: center; justify-content: center;
-      height: calc(100vh - 56px);
+      height: calc(100vh - 56px - var(--footer-h));
     }
     .drop-zone {
       display: flex; flex-direction: column; align-items: center; gap: 0.75rem;
@@ -236,7 +236,7 @@ function toRow(indi: Individual): ListRow {
 
     /* Add person FAB */
     .add-person-btn {
-      position: fixed; bottom: 1.5rem; right: 1.5rem;
+      position: fixed; bottom: calc(1.5rem + var(--footer-h)); right: 1.5rem;
       width: 52px; height: 52px; border-radius: 50%;
       background: var(--accent); color: #fff; border: none;
       font-size: 1.75rem; line-height: 1; cursor: pointer;

@@ -1,0 +1,6 @@
+.app-footer {
+  height: var(--footer-h);
+  display: flex; align-items: center; justify-content: center;
+  border-top: 1px solid var(--line);
+  font-size: 0.75rem; color: var(--ink-soft);
+}
