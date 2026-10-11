@@ -1,5 +1,3 @@
-import JSZip from 'jszip';
-
 // Export the on-screen family tree chart (whatever mode is showing, the whole
 // drawing rather than the visible window) as PDF, SVG or JPG.
 //
@@ -137,22 +135,23 @@ export async function exportTreePdf(layer: SVGGElement, pageSize: PageFormat): P
 // ── SVG / JPG ────────────────────────────────────────────────────────────────
 
 export interface RasterLimits { side: number; area: number } // canvas px
-export const DESKTOP_LIMITS: RasterLimits = { side: 16384, area: 100e6 };
-export const SAFE_LIMITS: RasterLimits = { side: 4096, area: 16e6 }; // iOS Safari's canvas cap
-
-export interface RasterPlan { scale: number; cols: number; rows: number; tileW: number; tileH: number }
+// Largest canvas tried first, then smaller ones when the browser refuses it.
+// Measured SVG→canvas→JPEG (2026-10): Chromium 149 and WebKit 26.5 manage
+// 268M px (e.g. 4096×65535); Firefox 151 manages 537M px but fails to encode a
+// 65535px-tall JPEG (38000 works); iOS Safari caps the area at 16.7M px.
+export const RASTER_LIMITS: RasterLimits[] = [
+  { side: 65535, area: 268_435_456 },
+  { side: 32767, area: 268_435_456 },
+  { side: 16384, area: 64e6 },
+  { side: 4096, area: 16_777_216 },
+];
 
 /**
- * JPG resolution: 3× tree units when the whole chart fits one canvas, else 2×
- * (never lower, so 11px labels stay ≥22px and readable when zoomed). A chart
- * too big for one canvas even at 2× is cut into square tiles (tree units).
+ * JPG resolution in px per tree unit: 3× for crisp text when zoomed, reduced
+ * only as far as needed for the whole chart to fit one canvas within `lim`.
  */
-export function planRaster(w: number, h: number, lim: RasterLimits = DESKTOP_LIMITS): RasterPlan {
-  const fits = (s: number) => w * s <= lim.side && h * s <= lim.side && w * h * s * s <= lim.area;
-  const scale = fits(3) ? 3 : 2;
-  if (fits(scale)) return { scale, cols: 1, rows: 1, tileW: w, tileH: h };
-  const side = Math.floor(Math.min(lim.side, Math.sqrt(lim.area)) / scale);
-  return { scale, cols: Math.ceil(w / side), rows: Math.ceil(h / side), tileW: side, tileH: side };
+export function rasterScale(w: number, h: number, lim: RasterLimits = RASTER_LIMITS[0]): number {
+  return Math.min(3, lim.side / w, lim.side / h, Math.sqrt(lim.area / (w * h)));
 }
 
 function save(blob: Blob, filename: string): void {
@@ -218,10 +217,10 @@ export async function exportTreeSvg(layer: SVGGElement): Promise<void> {
   save(new Blob([serialize(svg, x, y, w, h, Math.ceil(w), Math.ceil(h))], { type: 'image/svg+xml' }), 'family-tree.svg');
 }
 
-/** Draw one window of the chart to a JPEG at `scale` px per tree unit. */
-async function rasterTile(svg: SVGSVGElement, x: number, y: number, w: number, h: number, scale: number): Promise<Blob> {
-  const pxW = Math.ceil(w * scale);
-  const pxH = Math.ceil(h * scale);
+/** Draw the chart to a JPEG at `scale` px per tree unit; throws if the browser refuses the canvas. */
+async function rasterize(svg: SVGSVGElement, x: number, y: number, w: number, h: number, scale: number): Promise<Blob> {
+  const pxW = Math.floor(w * scale);
+  const pxH = Math.floor(h * scale);
   const url = URL.createObjectURL(new Blob([serialize(svg, x, y, w, h, pxW, pxH)], { type: 'image/svg+xml' }));
   try {
     const img = new Image();
@@ -234,6 +233,8 @@ async function rasterTile(svg: SVGSVGElement, x: number, y: number, w: number, h
     if (!ctx) throw new Error('canvas unavailable');
     ctx.fillStyle = paperColour();
     ctx.fillRect(0, 0, pxW, pxH);
+    // an over-limit canvas can fail silently (stays transparent) instead of throwing
+    if (ctx.getImageData(0, 0, 1, 1).data[3] !== 255) throw new Error('canvas too large');
     ctx.drawImage(img, 0, 0, pxW, pxH);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
     if (!blob) throw new Error('canvas too large');
@@ -244,31 +245,19 @@ async function rasterTile(svg: SVGSVGElement, x: number, y: number, w: number, h
 }
 
 /**
- * Export the whole chart as a high-resolution .jpg (see planRaster). If it needs
- * several tiles they download together as family-tree-jpg.zip. Falls back to
- * smaller canvases when the browser refuses a big one (iOS Safari).
+ * Export the whole chart as one high-resolution family-tree.jpg (see
+ * rasterScale), stepping down to a smaller canvas if the browser refuses one.
  */
 export async function exportTreeJpg(layer: SVGGElement): Promise<void> {
   const { svg, x, y, w, h } = await standaloneSvg(layer);
   if (!w || !h) return;
-
-  const render = async (lim: RasterLimits) => {
-    const p = planRaster(w, h, lim);
-    const tiles: { name: string; blob: Blob }[] = [];
-    for (let r = 0; r < p.rows; r++) {
-      for (let c = 0; c < p.cols; c++) {
-        const tx = x + c * p.tileW;
-        const ty = y + r * p.tileH;
-        const blob = await rasterTile(svg, tx, ty, Math.min(p.tileW, x + w - tx), Math.min(p.tileH, y + h - ty), p.scale);
-        tiles.push({ name: `family-tree-row${r + 1}-col${c + 1}.jpg`, blob });
-      }
+  let lastError: unknown;
+  for (const lim of RASTER_LIMITS) {
+    try {
+      return save(await rasterize(svg, x, y, w, h, rasterScale(w, h, lim)), 'family-tree.jpg');
+    } catch (e) {
+      lastError = e;
     }
-    return tiles;
-  };
-  const tiles = await render(DESKTOP_LIMITS).catch(() => render(SAFE_LIMITS));
-
-  if (tiles.length === 1) return save(tiles[0].blob, 'family-tree.jpg');
-  const zip = new JSZip();
-  for (const t of tiles) zip.file(t.name, t.blob);
-  save(await zip.generateAsync({ type: 'blob' }), 'family-tree-jpg.zip');
+  }
+  throw lastError;
 }

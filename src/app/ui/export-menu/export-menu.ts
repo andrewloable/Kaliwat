@@ -45,7 +45,7 @@ const LABEL: Record<Kind, string> = { file: 'file', pdf: 'PDF', svg: 'SVG', jpg:
         </button>
         <button type="button" class="item" [disabled]="!chartReady()" (click)="run('jpg')">
           <span class="title">JPG image</span>
-          <span class="hint">high resolution; very large charts come as a zip of tiles</span>
+          <span class="hint">high resolution, one image</span>
         </button>
 
         @if (busy()) {

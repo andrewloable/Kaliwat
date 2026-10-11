@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planTiles, substituteVars, planRaster, SAFE_LIMITS } from './chart-export';
+import { planTiles, substituteVars, rasterScale, RASTER_LIMITS } from './chart-export';
 
 // A4 printable area in pt, roughly (595x842 minus 24pt margins each side).
 const A4_W = 547;
@@ -53,28 +53,26 @@ describe('substituteVars', () => {
   });
 });
 
-describe('planRaster', () => {
-  it('renders a chart that fits at 3x as one image', () => {
-    expect(planRaster(1500, 2500)).toEqual({ scale: 3, cols: 1, rows: 1, tileW: 1500, tileH: 2500 });
+describe('rasterScale', () => {
+  it('renders a chart that fits at 3x', () => {
+    expect(rasterScale(1500, 2500)).toBe(3);
   });
 
-  it('drops to 2x (never lower) before splitting', () => {
-    const p = planRaster(3000, 6000); // 3x would be 18000px tall
-    expect(p).toEqual({ scale: 2, cols: 1, rows: 1, tileW: 3000, tileH: 6000 });
+  it('shrinks a big chart only as far as the canvas area allows', () => {
+    const s = rasterScale(3502, 28632); // the 484-card full tree from a real file
+    expect(s).toBeCloseTo(Math.sqrt(268_435_456 / (3502 * 28632)), 6); // ≈1.64x
+    expect(3502 * s * 28632 * s).toBeLessThanOrEqual(268_435_456 + 1);
   });
 
-  it('tiles a chart too big for one canvas, keeping 2x', () => {
-    const p = planRaster(4000, 60000);
-    expect(p.scale).toBe(2);
-    expect(p.cols * p.tileW).toBeGreaterThanOrEqual(4000);
-    expect(p.rows * p.tileH).toBeGreaterThanOrEqual(60000);
-    expect(p.tileW * p.scale * p.tileH * p.scale).toBeLessThanOrEqual(100e6);
+  it('respects a side cap (Firefox fallback)', () => {
+    const s = rasterScale(3502, 28632, RASTER_LIMITS[1]);
+    expect(28632 * s).toBeLessThanOrEqual(32767);
   });
 
-  it('uses small tiles under the iOS-safe limits', () => {
-    const p = planRaster(3000, 6000, SAFE_LIMITS);
-    expect(p.scale).toBe(2);
-    expect(p.tileW * p.scale).toBeLessThanOrEqual(SAFE_LIMITS.side);
-    expect(p.rows).toBeGreaterThan(1);
+  it('fits the iOS-safe canvas on the last fallback', () => {
+    const lim = RASTER_LIMITS[RASTER_LIMITS.length - 1];
+    const s = rasterScale(2566, 5312, lim);
+    expect(2566 * s * 5312 * s).toBeLessThanOrEqual(lim.area + 1);
+    expect(5312 * s).toBeLessThanOrEqual(lim.side);
   });
 });
