@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TreeStore } from '../../core/tree-store/tree.store';
-import { EditService, PersonFormData, branchBeyond } from '../../core/edit/edit.service';
+import { EditService, PersonFormData, trimSet } from '../../core/edit/edit.service';
 import { MediaService } from '../../media/media.service';
 import { MAX_MEDIA_BYTES } from '../../gedcom/gedzip/gedzip';
 import { Individual, GedcomNode } from '../../core/model/types';
@@ -225,23 +225,24 @@ function indi2form(indi: Individual): PersonFormData {
             <button class="cancel-btn" type="button" (click)="close()">Cancel</button>
             <button class="save-btn" type="submit">Save</button>
           </div>
-          @if (state() !== 'new' && trimOptions().length) {
+          @if (state() !== 'new' && trimOptions().length > 1) {
             <div class="connect-picker">
               <div class="field-group-label">Trim branch</div>
               @if (confirmingTrim(); as t) {
                 <span class="confirm-text">
-                  Cut “{{ t.label }}” and
-                  {{ t.count ? 'delete ' + t.count + (t.count === 1 ? ' person' : ' people') + ' permanently' : 'unlink only (still connected another way)' }}?
+                  Keep only {{ t.label }}
+                  {{ t.count ? 'and delete ' + t.count + ' other ' + (t.count === 1 ? 'person' : 'people') + ' permanently' : '(nothing to delete: everyone is also related through this side)' }}?
                 </span>
                 <div class="relatives">
                   <button type="button" class="confirm-delete" (click)="trim(t.unionId)">Trim</button>
-                  <button type="button" class="keep-btn" (click)="confirmingTrim.set(null)">Keep</button>
+                  <button type="button" class="keep-btn" (click)="confirmingTrim.set(null)">Cancel</button>
                 </div>
               } @else {
+                <span class="confirm-text">Choose the side to keep. Relatives connected only through the other sides are deleted.</span>
                 <div class="relatives">
                   @for (t of trimOptions(); track t.unionId) {
                     <button type="button" class="rel-btn" (click)="confirmingTrim.set(t)">
-                      {{ t.label }} <span class="ci-years">−{{ t.count }}</span>
+                      Keep {{ t.label }} <span class="ci-years">−{{ t.count }}</span>
                     </button>
                   }
                 </div>
@@ -385,8 +386,8 @@ export class PersonEditorComponent {
     return extractDetails(this.store.individuals().find((i) => i.id === id) ?? null);
   });
 
-  // Trim branch: one option per union this person belongs to (as child or partner),
-  // with how many people cutting that link would delete.
+  // Trim branch: one "keep this side" option per union this person belongs to (as
+  // child or partner), with how many people keeping only that side would delete.
   readonly trimOptions = computed(() => {
     const id = this.state();
     if (id === 'closed' || id === 'new') return [];
@@ -397,9 +398,9 @@ export class PersonEditorComponent {
       .map((u) => {
         const others = u.spouseIds.filter((s) => s !== id).map((s) => names.get(s)).join(' & ');
         const label = u.spouseIds.includes(id)
-          ? (others ? `Family with ${others}` : 'Children')
-          : `Parents' side${others ? ` (${others})` : ''}`;
-        return { unionId: u.id, label, count: branchBeyond(unions, id, u.id).length };
+          ? (others ? `family with ${others}` : 'children')
+          : `parents' side${others ? ` (${others})` : ''}`;
+        return { unionId: u.id, label, count: trimSet(unions, id, u.id).length };
       });
   });
   readonly confirmingTrim = signal<{ unionId: string; label: string; count: number } | null>(null);
@@ -451,11 +452,11 @@ export class PersonEditorComponent {
     this.close();
   }
 
-  /** Cut the edited person's link to `unionId` and delete everyone beyond it. */
+  /** Keep the edited person with their `unionId` side; delete their other relatives. */
   trim(unionId: string): void {
     const id = this.state();
     if (id === 'closed' || id === 'new') return;
-    this.editService.trimBranch(id, unionId);
+    this.editService.trimToSide(id, unionId);
     this.confirmingTrim.set(null);
   }
 

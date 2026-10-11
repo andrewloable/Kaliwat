@@ -1,5 +1,5 @@
 /**
- * E2E: trim a branch from the person editor, and delete only the orphan groups
+ * E2E: trim to one side from the person editor, and delete only the orphan groups
  * the user ticks in the "not connected to the main tree" review.
  */
 import { test, expect, Page } from '@playwright/test';
@@ -52,11 +52,12 @@ test.describe('Trim branch + orphan cleanup', () => {
     await nameAndSave(page, 'Grandpa');
   });
 
-  test('trimming the parents side deletes everything beyond the cut', async ({ page }) => {
+  test('keeping one side deletes only the relatives on the other side', async ({ page }) => {
     await row(page, 'Dad').click();
-    await page.getByRole('button', { name: /Parents' side \(Grandpa\)/ }).click();
-    await expect(page.getByText(/delete 1 person permanently/)).toBeVisible();
+    await page.getByRole('button', { name: /Keep children/ }).click();
+    await expect(page.getByText(/Keep only children and delete 1 other person permanently/)).toBeVisible();
     await page.getByRole('button', { name: 'Trim', exact: true }).click();
+    await expect(page.getByText(/Keep only children/)).toHaveCount(0);
     await page.getByRole('button', { name: 'Cancel' }).click();
 
     await expect(row(page, 'Grandpa')).toHaveCount(0);

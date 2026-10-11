@@ -61,35 +61,31 @@ function isObjeFor(node: GedcomNode, file: string): boolean {
 }
 
 /**
- * Everyone cut off from `personId` once their link to `unionId` is severed: people
- * reachable from that union's other members but no longer from `personId`. Empty
- * when another path (e.g. a cousin marriage) still joins the two sides.
+ * Who a "keep one side" trim removes: everyone connected to `personId` who is no
+ * longer reachable once `personId` keeps only their link to `keepUnionId` (e.g. keep
+ * the family with a spouse, drop the parents, siblings and other marriages). Anyone
+ * also related through the kept side stays.
  */
-export function branchBeyond(unions: Union[], personId: UUID, unionId: UUID): UUID[] {
-  const cutUnion = unions.find((u) => u.id === unionId);
-  if (!cutUnion) return [];
+export function trimSet(unions: Union[], personId: UUID, keepUnionId: UUID): UUID[] {
   const members = (u: Union) => [...u.spouseIds, ...u.childLinks.map((c) => c.childId)];
   const byPerson = new Map<UUID, Union[]>();
   for (const u of unions) for (const p of members(u)) byPerson.set(p, [...(byPerson.get(p) ?? []), u]);
 
-  const reach = (seeds: UUID[]): Set<UUID> => {
-    const seen = new Set(seeds);
-    const queue = [...seeds];
+  const reach = (keepOnly: boolean): Set<UUID> => {
+    const seen = new Set([personId]);
+    const queue = [personId];
     while (queue.length) {
       const p = queue.pop()!;
       for (const u of byPerson.get(p) ?? []) {
-        if (u.id === unionId && p === personId) continue; // the severed link
-        for (const q of members(u)) {
-          if (u.id === unionId && q === personId) continue;
-          if (!seen.has(q)) { seen.add(q); queue.push(q); }
-        }
+        if (keepOnly && p === personId && u.id !== keepUnionId) continue;
+        for (const q of members(u)) if (!seen.has(q)) { seen.add(q); queue.push(q); }
       }
     }
     return seen;
   };
 
-  const kept = reach([personId]);
-  return [...reach(members(cutUnion).filter((p) => p !== personId))].filter((p) => !kept.has(p));
+  const kept = reach(true);
+  return [...reach(false)].filter((p) => !kept.has(p));
 }
 
 /**
@@ -298,25 +294,24 @@ export class EditService {
   }
 
   /**
-   * Trim a branch: sever `personId`'s link to `unionId` and delete everyone who is
-   * no longer connected to `personId` through any other path (see branchBeyond).
+   * Trim to one side: keep `personId` with their `keepUnionId` family (and everyone
+   * related through it), delete everyone else connected to them (see trimSet).
    * Returns how many people were removed.
    */
-  trimBranch(personId: UUID, unionId: UUID): number {
-    const gone = branchBeyond(this.store.unions(), personId, unionId);
-    this._removePeople(new Set(gone), { personId, unionId });
+  trimToSide(personId: UUID, keepUnionId: UUID): number {
+    const gone = trimSet(this.store.unions(), personId, keepUnionId);
+    this._removePeople(new Set(gone));
     return gone.length;
   }
 
-  /** Remove `ids` (and optionally one person↔union link) with deleteIndividual's cleanup rules. */
-  private _removePeople(ids: Set<UUID>, cut?: { personId: UUID; unionId: UUID }): void {
-    const drop = (unionId: UUID, p: UUID) => ids.has(p) || (unionId === cut?.unionId && p === cut.personId);
+  /** Remove `ids` with deleteIndividual's cleanup rules. */
+  private _removePeople(ids: Set<UUID>): void {
     const removedUnionIds: UUID[] = [];
     const keptUnions = this.store.unions()
       .map((u) => ({
         ...u,
-        spouseIds: u.spouseIds.filter((s) => !drop(u.id, s)),
-        childLinks: u.childLinks.filter((c) => !drop(u.id, c.childId)),
+        spouseIds: u.spouseIds.filter((s) => !ids.has(s)),
+        childLinks: u.childLinks.filter((c) => !ids.has(c.childId)),
       }))
       .filter((u) => {
         if (u.spouseIds.length + u.childLinks.length >= 2) return true;
@@ -325,12 +320,11 @@ export class EditService {
       });
 
     const removed = new Set(removedUnionIds);
-    const stale = (i: Individual, unionId: UUID) => removed.has(unionId) || drop(unionId, i.id);
     const individuals = this.store.individuals()
       .filter((i) => !ids.has(i.id))
       .map((i) =>
-        i.unions.some((r) => stale(i, r.unionId))
-          ? { ...i, unions: i.unions.filter((r) => !stale(i, r.unionId)) }
+        i.unions.some((r) => removed.has(r.unionId))
+          ? { ...i, unions: i.unions.filter((r) => !removed.has(r.unionId)) }
           : i,
       );
 
