@@ -36,6 +36,7 @@ export interface DagEdge {
   id: string;
   x1: number; y1: number;
   x2: number; y2: number;
+  horizontal?: boolean; // generations run left→right; draw the curve sideways
 }
 
 export interface DagLayout {
@@ -73,7 +74,8 @@ function rowWidth(slots: Slot[]): number {
 }
 
 /**
- * Build the family DAG layout for focusId.
+ * Build the family DAG layout for focusId. Generations run left→right by default
+ * (`horizontal`), with parents on the left and children on the right.
  *
  * Rows:
  *  - parents row (row -1): focus's parents + union node
@@ -87,7 +89,13 @@ export function buildDagLayout(
   focusId: UUID,
   individuals: Map<UUID, Individual>,
   unions: Map<UUID, Union>,
+  horizontal = true,
 ): DagLayout {
+  // Built top-to-bottom in local axes, then flipped for horizontal. In that case a
+  // card is CH along the sibling axis and CW deep per generation.
+  const CW = horizontal ? CARD_H : CARD_W;
+  const CH = horizontal ? CARD_W : CARD_H;
+  const ROWH = CH + V_GAP;
   const nodes: DagNode[] = [];
   const edges: DagEdge[] = [];
 
@@ -100,7 +108,7 @@ export function buildDagLayout(
   function makePerson(id: UUID, isFocus: boolean, x: number, y: number): DagNode | null {
     const person = individuals.get(id);
     if (!person) return null;
-    const nodeKey = `${id}-${Math.round(y / ROW_H)}`;
+    const nodeKey = `${id}-${Math.round(y / ROWH)}`;
     if (seen.has(nodeKey)) return null; // same person on same row already placed
     seen.add(nodeKey);
     return { id: `person-${id}-${Math.round(y)}`, type: 'person', person, isFocus, x, y };
@@ -127,14 +135,14 @@ export function buildDagLayout(
   // Build row-0 slots
   const row0Slots: Slot[] = [];
   for (const { union, spouse } of leftUnions) {
-    if (spouse) row0Slots.push({ type: 'person', id: spouse.id, person: spouse, width: CARD_W });
+    if (spouse) row0Slots.push({ type: 'person', id: spouse.id, person: spouse, width: CW });
     row0Slots.push({ type: 'union', id: union.id, unionId: union.id, width: UNION_R * 2 });
   }
   const focusSlotIdx = row0Slots.length;
-  row0Slots.push({ type: 'person', id: focusId, person: focus, isFocus: true, width: CARD_W });
+  row0Slots.push({ type: 'person', id: focusId, person: focus, isFocus: true, width: CW });
   for (const { union, spouse } of rightUnions) {
     row0Slots.push({ type: 'union', id: union.id, unionId: union.id, width: UNION_R * 2 });
-    if (spouse) row0Slots.push({ type: 'person', id: spouse.id, person: spouse, width: CARD_W });
+    if (spouse) row0Slots.push({ type: 'person', id: spouse.id, person: spouse, width: CW });
   }
 
   // Focus x reference (top-left of focus card)
@@ -154,7 +162,7 @@ export function buildDagLayout(
         id: `union-${slot.unionId}-row0`,
         type: 'union',
         unionId: slot.unionId,
-        x: cx, y: ROW0_Y + CARD_H / 2,
+        x: cx, y: ROW0_Y + CH / 2,
         isFocus: false,
       });
     }
@@ -165,7 +173,7 @@ export function buildDagLayout(
     const slot = row0Slots[i];
     if (slot.type !== 'union') continue;
     const unionCx = cardCx(row0Slots, i) - focusX0;
-    const unionCy = ROW0_Y + CARD_H / 2;
+    const unionCy = ROW0_Y + CH / 2;
 
     // Find adjacent person slots (left and right)
     const leftPersonIdx = i - 1;
@@ -178,7 +186,7 @@ export function buildDagLayout(
       const fromLeft = pi < i;
       edges.push({
         id: `edge-row0-${ps.id}-to-union-${slot.unionId}`,
-        x1: fromLeft ? personCx + CARD_W / 2 : personCx - CARD_W / 2,
+        x1: fromLeft ? personCx + CW / 2 : personCx - CW / 2,
         y1: unionCy,
         x2: fromLeft ? unionCx - UNION_R : unionCx + UNION_R,
         y2: unionCy,
@@ -187,7 +195,8 @@ export function buildDagLayout(
   }
 
   // ── Row +1: children per union ───────────────────────────────────────────────
-  const unionChildGroups: { union: Union; unionCx: number; children: Individual[] }[] = [];
+  // Children hang from the female spouse's card when the union has one, else from the union dot.
+  const unionChildGroups: { union: Union; unionCx: number; fromX: number; fromY: number; children: Individual[] }[] = [];
 
   for (let i = 0; i < row0Slots.length; i++) {
     const slot = row0Slots[i];
@@ -199,29 +208,33 @@ export function buildDagLayout(
       .filter(Boolean) as Individual[];
     if (!children.length) continue;
     const unionCx = cardCx(row0Slots, i) - focusX0;
-    unionChildGroups.push({ union, unionCx, children });
+    const femaleIdx = row0Slots.findIndex(s =>
+      s.type === 'person' && s.id !== undefined && union.spouseIds.includes(s.id) && individuals.get(s.id)?.sex === 'F');
+    const fromX = femaleIdx >= 0 ? cardCx(row0Slots, femaleIdx) - focusX0 : unionCx;
+    const fromY = femaleIdx >= 0 ? CH : ROW0_Y + CH / 2 + UNION_R; // female card's bottom edge, or below the dot
+    unionChildGroups.push({ union, unionCx, fromX, fromY, children });
   }
 
   // Layout children: each group centered under its union node, groups spaced by gap
-  const CHILD_Y = ROW0_Y + ROW_H;
+  const CHILD_Y = ROW0_Y + ROWH;
 
-  for (const { union, unionCx, children } of unionChildGroups) {
-    const groupWidth = children.length * CARD_W + (children.length - 1) * H_GAP;
+  for (const { union, unionCx, fromX, fromY, children } of unionChildGroups) {
+    const groupWidth = children.length * CW + (children.length - 1) * H_GAP;
     const groupStartX = unionCx - groupWidth / 2;
-    const unionCy = ROW0_Y + CARD_H / 2;
+    const unionCy = ROW0_Y + CH / 2;
 
     for (let ci = 0; ci < children.length; ci++) {
       const child = children[ci];
-      const cx = groupStartX + ci * (CARD_W + H_GAP);
+      const cx = groupStartX + ci * (CW + H_GAP);
       const n = makePerson(child.id, false, cx, CHILD_Y);
       if (n) nodes.push(n);
 
-      const childCx = cx + CARD_W / 2;
-      // edge: union node → child
+      const childCx = cx + CW / 2;
+      // edge: female spouse (or union dot) → child
       edges.push({
         id: `edge-union-${union.id}-child-${child.id}`,
-        x1: unionCx,
-        y1: unionCy + UNION_R,
+        x1: fromX,
+        y1: fromY,
         x2: childCx,
         y2: CHILD_Y,
       });
@@ -235,70 +248,80 @@ export function buildDagLayout(
   );
 
   if (parentUnion) {
-    const PARENT_Y = ROW0_Y - ROW_H;
+    const PARENT_Y = ROW0_Y - ROWH;
     const parents = parentUnion.spouseIds
       .map(id => individuals.get(id))
       .filter(Boolean) as Individual[];
 
     // Place parents centered above the focus person
-    const parentsWidth = parents.length * CARD_W + (parents.length > 1 ? H_GAP + UNION_R * 2 + H_GAP : 0);
+    const parentsWidth = parents.length * CW + (parents.length > 1 ? H_GAP + UNION_R * 2 + H_GAP : 0);
     let px = -parentsWidth / 2;
 
     let parentUnionCx: number | null = null;
+    let femaleParentCx: number | null = null; // centre of the female parent's card, if any
 
     for (let pi = 0; pi < parents.length; pi++) {
       const pNode = makePerson(parents[pi].id, false, px, PARENT_Y);
       if (pNode) nodes.push(pNode);
+      if (femaleParentCx === null && parents[pi].sex === 'F') femaleParentCx = px + CW / 2;
 
       if (pi < parents.length - 1) {
         // union node between parents
-        const cx = px + CARD_W + H_GAP / 2;
+        const cx = px + CW + H_GAP / 2;
         parentUnionCx = cx;
         nodes.push({
           id: `union-${parentUnion.id}-parents`,
           type: 'union',
           unionId: parentUnion.id,
-          x: cx, y: PARENT_Y + CARD_H / 2,
+          x: cx, y: PARENT_Y + CH / 2,
           isFocus: false,
         });
         // Edges: parent → parent-union
         edges.push({
           id: `edge-parent-${parents[pi].id}-to-punion`,
-          x1: px + CARD_W,
-          y1: PARENT_Y + CARD_H / 2,
+          x1: px + CW,
+          y1: PARENT_Y + CH / 2,
           x2: cx - UNION_R,
-          y2: PARENT_Y + CARD_H / 2,
+          y2: PARENT_Y + CH / 2,
         });
         px = cx + UNION_R + H_GAP / 2;
       } else if (pi > 0) {
         edges.push({
           id: `edge-parent-${parents[pi].id}-to-punion`,
           x1: px,
-          y1: PARENT_Y + CARD_H / 2,
+          y1: PARENT_Y + CH / 2,
           x2: (parentUnionCx ?? 0) + UNION_R,
-          y2: PARENT_Y + CARD_H / 2,
+          y2: PARENT_Y + CH / 2,
         });
       }
 
-      if (pi < parents.length - 1) px += CARD_W + H_GAP;
+      if (pi < parents.length - 1) px += CW + H_GAP;
     }
 
-    // Edge: parent-union → focus
-    if (parentUnionCx !== null) {
+    // Edge: female parent (or the parents' union dot) → focus
+    if (femaleParentCx !== null) {
+      edges.push({
+        id: `edge-female-parent-to-focus`,
+        x1: femaleParentCx,
+        y1: PARENT_Y + CH, // her card's bottom edge
+        x2: CW / 2,
+        y2: ROW0_Y,
+      });
+    } else if (parentUnionCx !== null) {
       edges.push({
         id: `edge-punion-to-focus`,
         x1: parentUnionCx,
-        y1: PARENT_Y + CARD_H / 2 + UNION_R,
-        x2: CARD_W / 2, // center of focus card
+        y1: PARENT_Y + CH / 2 + UNION_R,
+        x2: CW / 2, // center of focus card
         y2: ROW0_Y,
       });
     } else if (parents.length === 1) {
       // Single parent: direct edge
       edges.push({
         id: `edge-parent-to-focus`,
-        x1: parents.length ? -parentsWidth / 2 + CARD_W / 2 : 0,
-        y1: PARENT_Y + CARD_H,
-        x2: CARD_W / 2,
+        x1: parents.length ? -parentsWidth / 2 + CW / 2 : 0,
+        y1: PARENT_Y + CH,
+        x2: CW / 2,
         y2: ROW0_Y,
       });
     }
@@ -318,6 +341,16 @@ export function buildDagLayout(
   for (const e of edges) {
     e.x1 += ox; e.y1 += oy;
     e.x2 += ox; e.y2 += oy;
+  }
+
+  if (horizontal) {
+    // Flip local axes: a card's top-left and a union's centre both swap cleanly.
+    for (const n of nodes) [n.x, n.y] = [n.y, n.x];
+    for (const e of edges) {
+      [e.x1, e.y1] = [e.y1, e.x1];
+      [e.x2, e.y2] = [e.y2, e.x2];
+      e.horizontal = true;
+    }
   }
 
   return { nodes, edges };

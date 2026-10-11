@@ -94,6 +94,9 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
     return buildLayout(focusId, mode, iMap, uMap);
   });
 
+  /** Family view direction: generations left→right (default) or top→bottom. */
+  readonly familyOrientation = signal<'horizontal' | 'vertical'>('horizontal');
+
   readonly dagLayout = computed(() => {
     const focusId = this.focusId();
     const individuals = this.store.individuals();
@@ -103,7 +106,7 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
     }
     const iMap = new Map(individuals.map(i => [i.id, i]));
     const uMap = new Map(unions.map(u => [u.id, u]));
-    return buildDagLayout(focusId, iMap, uMap);
+    return buildDagLayout(focusId, iMap, uMap, this.familyOrientation() === 'horizontal');
   });
 
   ngAfterViewInit(): void {
@@ -185,6 +188,10 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
   }
 
   dagEdgePath(e: DagEdge): string {
+    if (e.horizontal) {
+      const mx = (e.x1 + e.x2) / 2;
+      return `M${e.x1},${e.y1} C${mx},${e.y1} ${mx},${e.y2} ${e.x2},${e.y2}`;
+    }
     const my = (e.y1 + e.y2) / 2;
     return `M${e.x1},${e.y1} C${e.x1},${my} ${e.x2},${my} ${e.x2},${e.y2}`;
   }

@@ -6,6 +6,12 @@
       <button class="mode-btn" [class.active]="mode() === 'family'" (click)="mode.set('family')">Family</button>
       <button class="mode-btn" [class.active]="mode() === 'complete'" (click)="mode.set('complete')">Full tree</button>
     }
+    @if (mode() === 'family') {
+      <button class="mode-btn orient-btn" [class.active]="familyOrientation() === 'horizontal'"
+        [attr.aria-pressed]="familyOrientation() === 'horizontal'" (click)="familyOrientation.set('horizontal')">→ Left to right</button>
+      <button class="mode-btn orient-btn" [class.active]="familyOrientation() === 'vertical'"
+        [attr.aria-pressed]="familyOrientation() === 'vertical'" (click)="familyOrientation.set('vertical')">↓ Top to bottom</button>
+    }
     <button class="recenter-btn" title="Recenter" (click)="recenter()">⊙ Recenter</button>
   </div>
 
