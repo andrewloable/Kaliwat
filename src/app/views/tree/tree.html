@@ -49,15 +49,22 @@
         @for (edge of layout().edges; track edge.id) {
           <path class="tree-edge" [attr.d]="edgePath(edge)"
             fill="none" stroke="var(--line)" stroke-width="1.5"/>
+          @if (edge.spouse) {
+            <circle class="union-node" [attr.cx]="(edge.x1 + edge.x2) / 2" [attr.cy]="(edge.y1 + edge.y2) / 2" r="11"
+              fill="var(--paper-2)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text [attr.x]="(edge.x1 + edge.x2) / 2" [attr.y]="(edge.y1 + edge.y2) / 2"
+              text-anchor="middle" dominant-baseline="central"
+              font-size="12" fill="var(--accent)" aria-hidden="true">⚭</text>
+          }
         }
         @for (node of layout().nodes; track node.id) {
           <g class="card-node" [class.focus-node]="node.isFocus"
              [attr.transform]="'translate(' + node.x + ',' + node.y + ')'"
              role="button" tabindex="0"
              [attr.aria-label]="displayName(node.person)"
-             (click)="setFocus(node.id)"
-             (keydown.enter)="setFocus(node.id)"
-             (keydown.space)="setFocus(node.id)">
+             (click)="setFocus(node.person.id)"
+             (keydown.enter)="setFocus(node.person.id)"
+             (keydown.space)="setFocus(node.person.id)">
             <rect [attr.width]="CARD_W" [attr.height]="CARD_H" rx="8"
               fill="var(--card)"
               [attr.stroke]="node.isFocus ? 'var(--accent)' : 'var(--line)'"

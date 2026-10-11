@@ -22,6 +22,7 @@ export interface LayoutEdge {
   targetId?: UUID;
   x1: number; y1: number; // right edge of source card, vertical center
   x2: number; y2: number; // left edge of target card, vertical center
+  spouse?: boolean;       // person → partner link (drawn with a ⚭ marker)
 }
 
 export interface LayoutData {
@@ -29,7 +30,9 @@ export interface LayoutData {
   edges: LayoutEdge[];
 }
 
-interface Datum { id: UUID; person: Individual; children?: Datum[] }
+// `person` is unset for a partnerless family slot (children hang straight off the
+// parent); `spouse` marks a partner card inserted between a person and their children.
+interface Datum { id: string; person?: Individual; spouse?: boolean; children?: Datum[] }
 
 function parentsOf(personId: UUID, unions: Map<UUID, Union>): UUID[] {
   for (const u of unions.values()) {
@@ -55,13 +58,30 @@ function ancestorDatum(
 
 function descendantDatum(
   id: UUID, individuals: Map<UUID, Individual>, unions: Map<UUID, Union>,
-  depth: number, seen = new Set<UUID>(),
+  depth: number, seen = new Set<UUID>(), withSpouses = false,
 ): Datum | null {
   if (seen.has(id)) return null;
   seen.add(id);
   const person = individuals.get(id);
   if (!person) return null;
   if (depth === 0) return { id, person };
+  if (withSpouses) {
+    // One slot per family: the partner's card, with that family's children under it.
+    const families = person.unions.flatMap(ur => {
+      const u = unions.get(ur.unionId);
+      if (!u) return [];
+      const kids = u.childLinks
+        .map(c => descendantDatum(c.childId, individuals, unions, depth - 1, seen, true))
+        .filter((x): x is Datum => x !== null);
+      const partner = individuals.get(u.spouseIds.find(sid => sid !== id) ?? '');
+      if (!partner && !kids.length) return [];
+      return [{
+        id: `${u.id}-${partner?.id ?? 'none'}`, person: partner, spouse: !!partner,
+        children: kids.length ? kids : undefined,
+      }];
+    });
+    return { id, person, children: families.length ? families : undefined };
+  }
   const childIds = person.unions.flatMap(ur => {
     const u = unions.get(ur.unionId);
     return u ? u.childLinks.map(c => c.childId) : [];
@@ -78,10 +98,11 @@ export function buildLayout(
   individuals: Map<UUID, Individual>,
   unions: Map<UUID, Union>,
   maxDepth = 4,
+  withSpouses = false,
 ): LayoutData {
   const rootDatum = mode === 'pedigree'
     ? ancestorDatum(focusId, individuals, unions, maxDepth)
-    : descendantDatum(focusId, individuals, unions, maxDepth);
+    : descendantDatum(focusId, individuals, unions, maxDepth, new Set(), withSpouses);
 
   if (!rootDatum) return { nodes: [], edges: [] };
 
@@ -90,34 +111,43 @@ export function buildLayout(
   const layout = tree<Datum>().nodeSize([CARD_H + V_GAP, CARD_W + H_GAP]);
   const pointed: HierarchyPointNode<Datum> = layout(root);
 
-  const all = pointed.descendants();
+  const all = pointed.descendants().filter(n => n.data.person);
   const minX = Math.min(...all.map(n => n.x));
 
   const nodes: LayoutNode[] = all.map(n => ({
     id: n.data.id,
-    person: n.data.person,
+    person: n.data.person!,
     x: n.y,             // d3 y (depth column) → SVG left x
     y: n.x - minX,      // d3 x (sibling row) → SVG top y, shifted >= 0
     depth: n.depth,
     isFocus: n.data.id === focusId,
   }));
 
-  const edges: LayoutEdge[] = pointed.links().map(l => ({
-    id: `${l.source.data.id}-${l.target.data.id}`,
-    sourceId: l.source.data.id,
-    targetId: l.target.data.id,
-    x1: l.source.y + CARD_W,
-    y1: l.source.x - minX + CARD_H / 2,
-    x2: l.target.y,
-    y2: l.target.x - minX + CARD_H / 2,
-  }));
+  // Link each card to its nearest visible ancestor (skipping partnerless family slots).
+  const edges: LayoutEdge[] = all.flatMap(t => {
+    let s = t.parent;
+    while (s && !s.data.person) s = s.parent;
+    if (!s) return [];
+    return [{
+      id: `${s.data.id}-${t.data.id}`,
+      sourceId: s.data.id,
+      targetId: t.data.id,
+      x1: s.y + CARD_W,
+      y1: s.x - minX + CARD_H / 2,
+      x2: t.y,
+      y2: t.x - minX + CARD_H / 2,
+      ...(t.data.spouse ? { spouse: true } : {}),
+    }];
+  });
 
   return { nodes, edges };
 }
 
 /**
  * Hourglass: the focus's complete tree — every ancestor to the left, every
- * descendant to the right, the focus in the middle. Built by laying out the
+ * descendant to the right, the focus in the middle. On the descendant side each
+ * partner gets a card (⚭ link) with that family's children under it, so children
+ * of different partners stay apart. Built by laying out the
  * ancestor tree and the descendant tree separately (both rooted at the focus),
  * mirroring the ancestors to the left, aligning the two focus rows, and
  * re-deriving each connector left→right from the merged positions.
@@ -128,7 +158,7 @@ export function buildCompleteLayout(
   unions: Map<UUID, Union>,
   maxDepth = 100,
 ): LayoutData {
-  const desc = buildLayout(focusId, 'descendants', individuals, unions, maxDepth);
+  const desc = buildLayout(focusId, 'descendants', individuals, unions, maxDepth, true);
   const anc = buildLayout(focusId, 'pedigree', individuals, unions, maxDepth);
   if (desc.nodes.length === 0) return { nodes: [], edges: [] };
 
@@ -161,6 +191,7 @@ export function buildCompleteLayout(
       id: e.id, sourceId: e.sourceId, targetId: e.targetId,
       x1: L.x + CARD_W, y1: L.y + CARD_H / 2,
       x2: R.x, y2: R.y + CARD_H / 2,
+      ...(e.spouse ? { spouse: true } : {}),
     });
   }
 

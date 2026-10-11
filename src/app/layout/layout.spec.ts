@@ -111,6 +111,37 @@ describe('pedigree-layout', () => {
     expect(Math.min(...layout.nodes.map(n => n.x))).toBeGreaterThanOrEqual(0);
   });
 
+  it('complete: each partner gets a card with that family\'s children under it', () => {
+    // FO+S1 → K1,K2;  FO+S2 → K3;  FO alone → K4
+    const people = ['S1', 'S2', 'K1', 'K2', 'K3', 'K4'].map(id => makeIndi(id, id));
+    const individuals = new Map([['FO', makeIndi('FO', 'Focus', ['U1', 'U2', 'U3'])], ...people.map(p => [p.id, p] as const)]);
+    const unions = new Map([
+      ['U1', makeUnion('U1', ['FO', 'S1'], ['K1', 'K2'])],
+      ['U2', makeUnion('U2', ['FO', 'S2'], ['K3'])],
+      ['U3', makeUnion('U3', ['FO'], ['K4'])],
+    ]);
+
+    const layout = buildCompleteLayout('FO', individuals, unions);
+    const node = (pid: string) => layout.nodes.find(n => n.person.id === pid)!;
+    const parentOf = (pid: string) => {
+      const e = layout.edges.find(e => e.targetId === node(pid).id)!;
+      return layout.nodes.find(n => n.id === e.sourceId)!.person.id;
+    };
+
+    expect(layout.nodes.map(n => n.person.id).sort()).toEqual(['FO', 'K1', 'K2', 'K3', 'K4', 'S1', 'S2']);
+    expect(layout.edges.filter(e => e.spouse).map(e => parentOf(layout.nodes.find(n => n.id === e.targetId)!.person.id)))
+      .toEqual(['FO', 'FO']);
+    expect(['K1', 'K2', 'K3', 'K4'].map(parentOf)).toEqual(['S1', 'S1', 'S2', 'FO']);
+    expect(node('S1').x).toBe(node('S2').x);
+    expect(node('S1').x).toBeGreaterThan(node('FO').x);
+    expect(node('K1').x).toBeGreaterThan(node('S1').x);
+    expect(node('K4').x).toBe(node('K1').x); // partnerless family keeps its generation column
+
+    // the plain Descendants view is unchanged: no partner cards
+    const desc = buildLayout('FO', 'descendants', individuals, unions);
+    expect(desc.nodes.map(n => n.id).sort()).toEqual(['FO', 'K1', 'K2', 'K3', 'K4']);
+  });
+
   it('avoids infinite loop on circular reference (same person in two generations)', () => {
     // Person A is a parent AND appears as a child (GEDCOM inconsistency)
     const a = makeIndi('A', 'Alice', ['U1']);
