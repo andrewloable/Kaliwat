@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildLayout, buildCompleteLayout, CARD_W, CARD_H, LayoutNode } from './pedigree-layout';
+import { buildLayout, buildCompleteLayout, CARD_W, CARD_H, LayoutNode, COMPACT_INDENT } from './pedigree-layout';
 import { Individual, Union, UUID } from '../core/model/types';
 
 function makeIndi(id: UUID, given: string, unions: UUID[] = []): Individual {
@@ -206,10 +206,11 @@ describe('pedigree-layout', () => {
     ]);
     const height = (l: { nodes: LayoutNode[] }) => Math.max(...l.nodes.map(n => n.y)) + CARD_H;
 
-    it('wraps a family with many children into side-by-side columns', () => {
+    it('a family\'s children sit side by side in one row', () => {
       const compact = buildLayout('FO', 'descendants', individuals, unions, 4, false, false, true);
-      const xs = new Set(kids.map(k => compact.nodes.find(n => n.id === k)!.x));
-      expect(xs.size).toBe(3); // 12 children, at most 4 per column
+      const kidNodes = kids.map(k => compact.nodes.find(n => n.id === k)!);
+      expect(new Set(kidNodes.map(n => n.y)).size).toBe(1);   // one row
+      expect(new Set(kidNodes.map(n => n.x)).size).toBe(kids.length); // each its own column
     });
 
     it('is shorter than the normal left→right layout of the same tree', () => {
@@ -218,16 +219,165 @@ describe('pedigree-layout', () => {
       expect(height(compact)).toBeLessThan(height(normal) * 0.6);
     });
 
-    it('has no overlapping cards and every link leaves the parent\'s right edge', () => {
+    it('has no overlapping cards and every link leaves the parent\'s bottom edge', () => {
       const compact = buildLayout('FO', 'descendants', individuals, unions, 4, false, false, true);
       expectNoOverlap(compact.nodes);
       const parent = compact.nodes.find(n => n.id === 'FO')!;
       const kidEdges = compact.edges.filter(e => e.sourceId === 'FO');
       expect(kidEdges).toHaveLength(kids.length);
-      for (const e of kidEdges) expect(e.x1).toBeCloseTo(parent.x + CARD_W);
+      for (const e of kidEdges) expect(e.y1).toBeCloseTo(parent.y + CARD_H);
     });
 
-    it('complete compact keeps ancestors and descendants apart with no overlaps', () => {
+    it('first three generations are rows, top to bottom; deeper ones stack beneath, indented', () => {
+      // FO → K → G → GG → GGG
+      const ind = new Map([['FO', makeIndi('FO', 'FO', ['U1'])], ['K', makeIndi('K', 'K', ['U2'])],
+        ['G', makeIndi('G', 'G', ['U3'])], ['GG', makeIndi('GG', 'GG', ['U4'])], ['GGG', makeIndi('GGG', 'GGG')]]);
+      const un = new Map([['U1', makeUnion('U1', ['FO'], ['K'])], ['U2', makeUnion('U2', ['K'], ['G'])],
+        ['U3', makeUnion('U3', ['G'], ['GG'])], ['U4', makeUnion('U4', ['GG'], ['GGG'])]]);
+      const layout = buildLayout('FO', 'descendants', ind, un, 4, false, false, 3);
+      const n = (id: string) => layout.nodes.find(x => x.id === id)!;
+      // generations 1–3 (FO, K, G) are rows: each one further down
+      expect(n('K').y).toBeGreaterThan(n('FO').y);
+      expect(n('G').y).toBeGreaterThan(n('K').y);
+      // generation 4 (GG) is stacked under G, indented, not further right
+      expect(n('GG').x).toBeCloseTo(n('G').x + COMPACT_INDENT);
+      expect(n('GG').y).toBeGreaterThan(n('G').y + CARD_H - 1);
+      // generation 5 (GGG) stacks under GG, indented again
+      expect(n('GGG').x).toBeCloseTo(n('GG').x + COMPACT_INDENT);
+      expect(n('GGG').y).toBeGreaterThan(n('GG').y + CARD_H - 1);
+      expectNoOverlap(layout.nodes);
+    });
+
+    it('a Gen 2 person\'s children sit side by side in a row, and their children stack beneath them', () => {
+      // GP (Gen 1) → FO (Gen 2) → three children (Gen 3) → one grandchild each (Gen 4)
+      const ids = ['GP', 'FO', 'A', 'B', 'C', 'A1', 'B1', 'C1'];
+      const ind = new Map<UUID, Individual>(ids.map(id => [id, makeIndi(id, id)] as const));
+      ind.get('GP')!.unions = [{ unionId: 'U0' }];
+      ind.get('FO')!.unions = [{ unionId: 'U1' }];
+      ['A', 'B', 'C'].forEach(k => { ind.get(k)!.unions = [{ unionId: `U${k}` }]; });
+      const un = new Map<UUID, Union>([
+        ['U0', makeUnion('U0', ['GP'], ['FO'])],
+        ['U1', makeUnion('U1', ['FO'], ['A', 'B', 'C'])],
+        ['UA', makeUnion('UA', ['A'], ['A1'])], ['UB', makeUnion('UB', ['B'], ['B1'])], ['UC', makeUnion('UC', ['C'], ['C1'])],
+      ]);
+      const layout = buildLayout('GP', 'descendants', ind, un, 4, false, false, 3);
+      const n = (id: string) => layout.nodes.find(x => x.id === id)!;
+      // the three children are side by side in one row, under FO
+      expect(new Set(['A', 'B', 'C'].map(k => n(k).y)).size).toBe(1);
+      expect(new Set(['A', 'B', 'C'].map(k => n(k).x)).size).toBe(3);
+      expect(n('A').y).toBeGreaterThan(n('FO').y);
+      // their Gen 4 children stack beneath them, indented
+      expect(n('A1').x).toBeCloseTo(n('A').x + COMPACT_INDENT);
+      expect(n('A1').y).toBeGreaterThan(n('A').y + CARD_H - 1);
+      expectNoOverlap(layout.nodes);
+    });
+
+    it('by default the first 4 generations are rows and generation 5 onward cascades', () => {
+      // FO (1) → K (2) → G (3) → GG (4) → GGG (5)
+      const ind = new Map([['FO', makeIndi('FO', 'FO', ['U1'])], ['K', makeIndi('K', 'K', ['U2'])],
+        ['G', makeIndi('G', 'G', ['U3'])], ['GG', makeIndi('GG', 'GG', ['U4'])], ['GGG', makeIndi('GGG', 'GGG')]]);
+      const un = new Map([['U1', makeUnion('U1', ['FO'], ['K'])], ['U2', makeUnion('U2', ['K'], ['G'])],
+        ['U3', makeUnion('U3', ['G'], ['GG'])], ['U4', makeUnion('U4', ['GG'], ['GGG'])]]);
+      const layout = buildLayout('FO', 'descendants', ind, un, 4, false, false, true);
+      const n = (id: string) => layout.nodes.find(x => x.id === id)!;
+      expect(n('GG').y).toBeGreaterThan(n('G').y);          // generation 4 is a row below G
+      expect(n('GG').x).toBeCloseTo(n('G').x);               // centred under G, not indented
+      expect(n('GGG').x).toBeCloseTo(n('GG').x + COMPACT_INDENT); // generation 5 cascades
+      expect(n('GGG').y).toBeGreaterThan(n('GG').y + CARD_H - 1);
+    });
+
+    it('the rows setting moves where the cascade starts', () => {
+      const layout = buildLayout('FO', 'descendants', new Map([['FO', makeIndi('FO', 'FO', ['U1'])], ['K', makeIndi('K', 'K', ['U2'])],
+        ['G', makeIndi('G', 'G', ['U3'])]]), new Map([['U1', makeUnion('U1', ['FO'], ['K'])], ['U2', makeUnion('U2', ['K'], ['G'])],
+        ['U3', makeUnion('U3', ['G'], [])]]), 4, false, false, 2);
+      const n = (id: string) => layout.nodes.find(x => x.id === id)!;
+      // with 2 rows, K (generation 2) is the last row; G (generation 3) cascades beneath it
+      expect(n('G').x).toBeCloseTo(n('K').x + COMPACT_INDENT);
+    });
+
+    it('partners sit beside their person in the same row; each family hangs beneath its partner', () => {
+      // FO (Gen 1) married to Q (Gen 1); their child K (Gen 2) is under Q, and FO's child M is under FO
+      const ind = new Map([['FO', { ...makeIndi('FO', 'FO', ['UF', 'UQ']), sex: 'M' as const }], ['Q', { ...makeIndi('Q', 'Q', ['UQ']), sex: 'F' as const }],
+        ['K', makeIndi('K', 'K')], ['M', makeIndi('M', 'M')]]);
+      const un = new Map([['UQ', makeUnion('UQ', ['FO', 'Q'], ['K'])], ['UF', makeUnion('UF', ['FO'], ['M'])]]);
+      const layout = buildLayout('FO', 'descendants', ind, un, 4, true, false, true);
+      const fo = layout.nodes.find(x => x.person?.id === 'FO')!;
+      const q = layout.nodes.find(x => x.person?.id === 'Q')!;
+      const k = layout.nodes.find(x => x.person?.id === 'K')!;
+      expect(q.y).toBeCloseTo(fo.y);          // same row
+      expect(q.x).toBeGreaterThan(fo.x);      // beside, to the right
+      expect(k.y).toBeGreaterThan(q.y);       // their child is in the row beneath
+      expect(k.x).toBeCloseTo(q.x);           // straight under the partner
+      expect(layout.edges.find(e => e.spouse)).toBeDefined();
+      expectNoOverlap(layout.nodes);
+    });
+
+    it('children hang from the female parent, or from each partner when there are several spouses', () => {
+      const person = (id: string, sex: 'M' | 'F', unions: string[] = []) => ({ ...makeIndi(id, id, unions), sex });
+      const sources = (root: string, people: Individual[], fams: Union[]) => {
+        const ind = new Map(people.map(p => [p.id, p] as const));
+        const un = new Map(fams.map(u => [u.id, u] as const));
+        const l = buildLayout(root, 'descendants', ind, un, 4, true, false, true);
+        // partner cards carry a family id ('U1-W'); the person is the part after the last dash
+        return l.edges.filter(e => (e.targetId ?? '').startsWith('K')).map(e => (e.sourceId ?? '').split('-').pop()!);
+      };
+      // one husband, one wife: children from the wife (female)
+      expect(sources('H', [person('H', 'M', ['U1']), person('W', 'F', ['U1']), person('K1', 'M')],
+        [makeUnion('U1', ['H', 'W'], ['K1'])])).toEqual(['W']);
+      // a man with two wives: each wife's children from that wife
+      const two = sources('H', [person('H', 'M', ['U1', 'U2']), person('W1', 'F', ['U1']), person('W2', 'F', ['U2']),
+        person('K1', 'M'), person('K2', 'M')], [makeUnion('U1', ['H', 'W1'], ['K1']), makeUnion('U2', ['H', 'W2'], ['K2'])]);
+      expect(two.sort()).toEqual(['W1', 'W2']);
+      // a woman with two husbands: each husband's children from that husband
+      const twoH = sources('W', [person('W', 'F', ['U1', 'U2']), person('H1', 'M', ['U1']), person('H2', 'M', ['U2']),
+        person('K1', 'M'), person('K2', 'M')], [makeUnion('U1', ['H1', 'W'], ['K1']), makeUnion('U2', ['H2', 'W'], ['K2'])]);
+      expect(twoH.sort()).toEqual(['H1', 'H2']);
+    });
+
+    it('in a cascade, each wife\'s children cascade beneath that wife, not beneath the husband', () => {
+      const person = (id: string, sex: 'M' | 'F', unions: string[] = []) => ({ ...makeIndi(id, id, unions), sex });
+      const ind = new Map<string, Individual>([['H', person('H', 'M', ['U1', 'U2'])], ['W1', person('W1', 'F', ['U1'])],
+        ['W2', person('W2', 'F', ['U2'])], ['K1', makeIndi('K1', 'K1')], ['K2', makeIndi('K2', 'K2')]]);
+      const un = new Map<string, Union>([['U1', makeUnion('U1', ['H', 'W1'], ['K1'])], ['U2', makeUnion('U2', ['H', 'W2'], ['K2'])]]);
+      // one row only, so the children cascade
+      const layout = buildLayout('H', 'descendants', ind, un, 4, true, false, 1);
+      const at = (id: string) => layout.nodes.find(n => n.person?.id === id)!;
+      const w1 = at('W1'), w2 = at('W2'), k1 = at('K1'), k2 = at('K2');
+      expect(k1.x).toBeGreaterThan(w1.x);
+      expect(k1.x).toBeLessThan(w1.x + CARD_W);     // starts under wife 1
+      expect(k2.x).toBeGreaterThan(w2.x);
+      expect(k2.x).toBeLessThan(w2.x + CARD_W);     // starts under wife 2
+      expect(k2.x).toBeGreaterThan(k1.x);
+      expectNoOverlap(layout.nodes);
+    });
+
+    it('a cascade link runs down a spine beside the parent, never through the child cards', () => {
+      const layout = buildLayout('FO', 'descendants', new Map([['FO', makeIndi('FO', 'FO', ['U1'])], ['K', makeIndi('K', 'K', ['U2'])],
+        ['G', makeIndi('G', 'G', ['U3'])], ['GG', makeIndi('GG', 'GG', ['U4'])], ['GGG', makeIndi('GGG', 'GGG')]]),
+        new Map([['U1', makeUnion('U1', ['FO'], ['K'])], ['U2', makeUnion('U2', ['K'], ['G'])],
+          ['U3', makeUnion('U3', ['G'], ['GG'])], ['U4', makeUnion('U4', ['GG'], ['GGG'])]]), 4, false, false, 3);
+      const gg = layout.nodes.find(n => n.id === 'GG')!;
+      const ladder = layout.edges.find(e => e.targetId === 'GGG')!;
+      expect(ladder.ladder).toBe(true);
+      expect(ladder.x1).toBeGreaterThan(gg.x - 1);          // spine starts inside the parent's card
+      expect(ladder.x1).toBeLessThan(gg.x + COMPACT_INDENT); // ...and runs left of the child cards
+      expect(ladder.x2).toBeCloseTo(layout.nodes.find(n => n.id === 'GGG')!.x);
+    });
+
+    it('siblings that cascade stay together in one column, with no overlaps', () => {
+      // G has 40 children, each with no descendants: far too tall for one column
+      const kids = Array.from({ length: 40 }, (_, i) => `C${i}`);
+      const ind = new Map<UUID, Individual>([['FO', makeIndi('FO', 'FO', ['U1'])], ['K', makeIndi('K', 'K', ['U2'])],
+        ['G', makeIndi('G', 'G', ['U3'])], ...kids.map(k => [k, makeIndi(k, k)] as const)]);
+      const un = new Map<UUID, Union>([['U1', makeUnion('U1', ['FO'], ['K'])], ['U2', makeUnion('U2', ['K'], ['G'])],
+        ['U3', makeUnion('U3', ['G'], kids)]]);
+      const layout = buildLayout('FO', 'descendants', ind, un, 4, false, false, 3);
+      const columns = new Set(kids.map(k => layout.nodes.find(n => n.id === k)!.x));
+      expect(columns.size).toBe(1); // all forty in one column
+      expectNoOverlap(layout.nodes);
+    });
+
+    it('complete compact: ancestors above the focus, descendants below, no overlaps', () => {
       const ind = new Map(individuals);
       ind.set('PA', makeIndi('PA', 'Parent', ['UP']));
       ind.set('GP', makeIndi('GP', 'Grandparent'));
@@ -235,10 +385,10 @@ describe('pedigree-layout', () => {
       un.set('UP', makeUnion('UP', ['PA'], ['FO']));
       un.set('UG', makeUnion('UG', ['GP'], ['PA']));
       const layout = buildCompleteLayout('FO', ind, un, 100, false, true);
-      const x = (id: string) => layout.nodes.find(n => n.id === id)!.x;
-      expect(x('GP')).toBeLessThan(x('PA'));
-      expect(x('PA')).toBeLessThan(x('FO'));
-      expect(x('FO')).toBeLessThan(x('K0'));
+      const y = (id: string) => layout.nodes.find(n => n.id === id)!.y;
+      expect(y('GP')).toBeLessThan(y('PA'));
+      expect(y('PA')).toBeLessThan(y('FO'));
+      expect(y('FO')).toBeLessThan(y('K0'));
       expectNoOverlap(layout.nodes);
     });
   });

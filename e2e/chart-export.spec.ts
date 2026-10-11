@@ -82,7 +82,7 @@ test('chart exports as a self-contained SVG and a high-resolution JPG', async ({
   await page.mouse.click(5, 300);
 
   await page.getByRole('tab', { name: 'Tree' }).click();
-  await page.getByRole('button', { name: 'Full tree' }).click(); // Maria ⚭ Jose → Ana, Carlos
+  // the Full tree is the only view; Maria ⚭ Jose → Ana, Carlos
   await expect(page.locator('.tree-svg .card-node')).toHaveCount(4);
 
   const svgDl = await exportChart(page, /^SVG/);
