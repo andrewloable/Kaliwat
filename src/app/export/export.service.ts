@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { db } from '../core/db/kaliwat-db';
 import { TreeStore } from '../core/tree-store/tree.store';
 import { serializeAst } from '../gedcom/serialize/gedcom-serializer';
@@ -16,6 +16,9 @@ const MAX_ID = '￿';
 @Injectable({ providedIn: 'root' })
 export class ExportService {
   private readonly store = inject(TreeStore);
+
+  /** The tree view's rendered chart layer while it is on screen (for PDF/SVG/JPG export). */
+  readonly chart = signal<SVGGElement | null>(null);
 
   /** Number of cached photo blobs for a tree — decides .gdz vs .ged. */
   async cachedMediaCount(treeId: string): Promise<number> {

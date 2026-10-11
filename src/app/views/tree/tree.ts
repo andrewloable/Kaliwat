@@ -13,7 +13,7 @@ import { SearchService } from '../../core/search/search.service';
 import { fold, matchesTerms } from '../../core/search/search-util';
 import { PersonEditorComponent } from '../../ui/person-editor/person-editor';
 import { wrapToLines } from './wrap-text';
-import { exportTreePdf, PageFormat } from './pdf-export';
+import { ExportService } from '../../export/export.service';
 
 export const UNION_R = 14; // union dot radius — keep in sync with dag-layout.ts
 
@@ -30,6 +30,7 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
   protected readonly store = inject(TreeStore);
   protected readonly media = inject(MediaService);
   protected readonly search = inject(SearchService);
+  private readonly exportService = inject(ExportService);
 
   readonly mode = signal<'pedigree' | 'descendants' | 'family' | 'complete'>('pedigree');
   readonly focusId = signal<string | null>(null);
@@ -116,25 +117,13 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
 
     svg.call(this.zoomBehavior);
     this.zoomBehavior.transform(svg, zoomIdentity.translate(40, 40));
+    this.exportService.chart.set(layer); // the Export menu renders PDF/SVG/JPG from it
   }
 
   ngOnDestroy(): void {
+    this.exportService.chart.set(null);
     if (this.svgEl) {
       select<SVGSVGElement, unknown>(this.svgEl.nativeElement).on('.zoom', null);
-    }
-  }
-
-  // PDF export of the current tree view (ancestors / descendants / family).
-  readonly pdfSize = signal<PageFormat>('a4');
-  readonly exporting = signal(false);
-
-  async exportPdf(): Promise<void> {
-    if (this.exporting() || this.store.isEmpty() || !this.chartLayerEl) return;
-    this.exporting.set(true);
-    try {
-      await exportTreePdf(this.chartLayerEl.nativeElement, this.pdfSize());
-    } finally {
-      this.exporting.set(false);
     }
   }
 

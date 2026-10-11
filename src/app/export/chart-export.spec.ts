@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planTiles, substituteVars } from './pdf-export';
+import { planTiles, substituteVars, planRaster, SAFE_LIMITS } from './chart-export';
 
 // A4 printable area in pt, roughly (595x842 minus 24pt margins each side).
 const A4_W = 547;
@@ -50,5 +50,31 @@ describe('substituteVars', () => {
 
   it('falls back to black for an unknown var (never emits an unparseable value)', () => {
     expect(substituteVars('var(--missing)', lookup)).toBe('#000');
+  });
+});
+
+describe('planRaster', () => {
+  it('renders a chart that fits at 3x as one image', () => {
+    expect(planRaster(1500, 2500)).toEqual({ scale: 3, cols: 1, rows: 1, tileW: 1500, tileH: 2500 });
+  });
+
+  it('drops to 2x (never lower) before splitting', () => {
+    const p = planRaster(3000, 6000); // 3x would be 18000px tall
+    expect(p).toEqual({ scale: 2, cols: 1, rows: 1, tileW: 3000, tileH: 6000 });
+  });
+
+  it('tiles a chart too big for one canvas, keeping 2x', () => {
+    const p = planRaster(4000, 60000);
+    expect(p.scale).toBe(2);
+    expect(p.cols * p.tileW).toBeGreaterThanOrEqual(4000);
+    expect(p.rows * p.tileH).toBeGreaterThanOrEqual(60000);
+    expect(p.tileW * p.scale * p.tileH * p.scale).toBeLessThanOrEqual(100e6);
+  });
+
+  it('uses small tiles under the iOS-safe limits', () => {
+    const p = planRaster(3000, 6000, SAFE_LIMITS);
+    expect(p.scale).toBe(2);
+    expect(p.tileW * p.scale).toBeLessThanOrEqual(SAFE_LIMITS.side);
+    expect(p.rows).toBeGreaterThan(1);
   });
 });

@@ -131,7 +131,7 @@ function yearsOf(p: Individual): string {
     .years { font-family: var(--font-sans); font-size: 0.8125rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
     .verdict { margin: 0; font-size: 1rem; color: var(--ink); }
     .term { color: var(--accent); }
-    .trace-scroll { overflow: auto; padding: 0.25rem 0 0.5rem; }
+    .trace-scroll { overflow: auto; padding: 1rem 0 0.5rem; } /* top room for the "common ancestor" tags */
     .trace { position: relative; margin: 0 auto; }
     svg { position: absolute; inset: 0; overflow: visible; }
     line { stroke: var(--line); stroke-width: 1.5; }
