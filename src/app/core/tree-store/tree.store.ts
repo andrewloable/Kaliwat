@@ -1,5 +1,6 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { Individual, Union, UUID } from '../model/types';
+import { generations } from '../relate/relate';
 
 export type ImportStatus =
   | { kind: 'idle' }
@@ -15,6 +16,8 @@ export class TreeStore {
   readonly importStatus = signal<ImportStatus>({ kind: 'idle' });
 
   readonly isEmpty = computed(() => this.individuals().length === 0);
+  /** Generation number per person (1 = oldest known generation of their family). */
+  readonly generations = computed(() => generations(this.individuals(), this.unions()));
 
   setIndividuals(people: Individual[]): void {
     this.individuals.set(people);

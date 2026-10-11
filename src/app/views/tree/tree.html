@@ -91,6 +91,12 @@
             <text x="64" [attr.y]="pLines.length > 1 ? 60 : 50"
               font-family="'Avenir Next','Segoe UI',Helvetica,Arial,sans-serif"
               font-size="12" fill="var(--ink-soft)">{{years(node.person)}}</text>
+            @let pGen = store.generations().get(node.person.id);
+            @if (pGen) {
+              <text [attr.x]="CARD_W - 10" [attr.y]="CARD_H - 10" text-anchor="end"
+                font-family="'Avenir Next','Segoe UI',Helvetica,Arial,sans-serif"
+                font-size="11" fill="var(--ink-soft)">Gen {{ pGen }}</text>
+            }
             <g class="card-edit" role="button" tabindex="0"
                [attr.aria-label]="'Edit ' + displayName(node.person)"
                (click)="editor.open(node.person.id); $event.stopPropagation()"
@@ -145,6 +151,12 @@
             <text x="64" [attr.y]="fLines.length > 1 ? 60 : 50"
               font-family="'Avenir Next','Segoe UI',Helvetica,Arial,sans-serif"
               font-size="12" fill="var(--ink-soft)">{{years(node.person!)}}</text>
+            @let fGen = store.generations().get(node.person!.id);
+            @if (fGen) {
+              <text [attr.x]="CARD_W - 10" [attr.y]="CARD_H - 10" text-anchor="end"
+                font-family="'Avenir Next','Segoe UI',Helvetica,Arial,sans-serif"
+                font-size="11" fill="var(--ink-soft)">Gen {{ fGen }}</text>
+            }
             <g class="card-edit" role="button" tabindex="0"
                [attr.aria-label]="'Edit ' + displayName(node.person!)"
                (click)="editor.open(node.person!.id); $event.stopPropagation()"

@@ -114,6 +114,10 @@ function toRow(indi: Individual): ListRow {
                 <span class="row-hint">{{ row.subtitle }}</span>
               }
             </div>
+            @let gen = store.generations().get(row.id);
+            @if (gen) {
+              <span class="row-gen" [attr.aria-label]="'Generation ' + gen">Gen {{ gen }}</span>
+            }
             <span class="row-years" aria-label="Born {{ row.birthYear }} died {{ row.deathYear }}">
               {{ row.birthYear }}<span class="year-sep">–</span>{{ row.deathYear }}
             </span>
@@ -181,6 +185,10 @@ function toRow(indi: Individual): ListRow {
     }
 
     .row-hint { font-size: 0.875rem; color: var(--ink-soft); }
+    .row-gen {
+      font-size: 0.75rem; color: var(--ink-soft); background: var(--paper-2);
+      border-radius: 999px; padding: 0.1rem 0.55rem; white-space: nowrap; font-variant-numeric: tabular-nums;
+    }
 
     .row-years {
       flex-shrink: 0;

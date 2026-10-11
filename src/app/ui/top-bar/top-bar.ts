@@ -4,10 +4,11 @@ import { SearchService } from '../../core/search/search.service';
 import { TreeStore } from '../../core/tree-store/tree.store';
 import { ImportService } from '../../core/import/import.service';
 import { ExportService } from '../../export/export.service';
+import { CompareComponent } from '../compare/compare';
 
 @Component({
   selector: 'app-top-bar',
-  imports: [RouterLink, RouterLinkActive],
+  imports: [RouterLink, RouterLinkActive, CompareComponent],
   templateUrl: './top-bar.html',
   styleUrl: './top-bar.scss',
 })

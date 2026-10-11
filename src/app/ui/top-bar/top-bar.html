@@ -19,8 +19,14 @@
   </nav>
 
   @if (!store.isEmpty()) {
-    <button class="export-btn" type="button" (click)="export()" title="Download your tree (.gdz with photos, else .ged)">Export</button>
+    <button class="export-btn" type="button" (click)="compare.open()" title="See how two people are related" aria-label="Compare">
+      <span class="btn-text">Compare</span><span class="btn-icon" aria-hidden="true">⇄</span>
+    </button>
+    <button class="export-btn" type="button" (click)="export()" title="Download your tree (.gdz with photos, else .ged)" aria-label="Export">
+      <span class="btn-text">Export</span><span class="btn-icon" aria-hidden="true">⤓</span>
+    </button>
   }
   <button class="import-btn" type="button" (click)="importInput.click()">Import</button>
   <input #importInput type="file" accept=".ged,.gdz" hidden (change)="onImport($event)" aria-label="Import a GEDCOM file" />
 </header>
+<app-compare #compare />
