@@ -4,6 +4,8 @@ export const MAX_GDZ_BYTES = 200 * 1024 * 1024;  // 200 MB total archive
 export const MAX_MEDIA_BYTES = 50 * 1024 * 1024; // 50 MB per entry
 export const MAX_MEDIA_ENTRIES = 2000;
 export const THUMB_PX = 300;                      // max thumbnail dimension
+export const PHOTO_MAX_PX = 400;                   // longest side of a stored profile photo (shown at ~72px)
+export const PHOTO_QUALITY = 0.85;
 
 export interface MediaEntry {
   path: string;
@@ -28,6 +30,38 @@ function mimeFor(path: string): string {
 }
 
 /** Generates a thumbnail Blob (best-effort, returns null if browser API unavailable). */
+/**
+ * Shrink a photo to PHOTO_MAX_PX on its longest side and re-encode it as WebP (or
+ * JPEG where the browser can't encode WebP). Returns the original when the result
+ * would not be smaller, when the browser can't decode the image, or for GIFs (which
+ * may be animated).
+ */
+export async function optimizePhoto(blob: Blob): Promise<Blob> {
+  if (blob.type === 'image/gif') return blob;
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const scale = Math.min(1, PHOTO_MAX_PX / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = new OffscreenCanvas(w, h);
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, w, h);
+    let out = await canvas.convertToBlob({ type: 'image/webp', quality: PHOTO_QUALITY });
+    if (out.type !== 'image/webp') {
+      // no WebP encoder: JPEG has no transparency, so paint a white background first
+      const jpeg = new OffscreenCanvas(w, h);
+      const ctx = jpeg.getContext('2d')!;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(bitmap, 0, 0, w, h);
+      out = await jpeg.convertToBlob({ type: 'image/jpeg', quality: PHOTO_QUALITY });
+    }
+    bitmap.close();
+    return out.size < blob.size ? out : blob;
+  } catch {
+    return blob;
+  }
+}
+
 export async function makeThumbnail(blob: Blob): Promise<Blob | null> {
   try {
     const bitmap = await createImageBitmap(blob);

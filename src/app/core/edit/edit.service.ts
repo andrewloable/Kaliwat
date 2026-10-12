@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { TreeStore } from '../tree-store/tree.store';
 import { PersistenceService } from '../db/persistence.service';
 import { db } from '../db/kaliwat-db';
-import { makeThumbnail } from '../../gedcom/gedzip/gedzip';
+import { makeThumbnail, optimizePhoto } from '../../gedcom/gedzip/gedzip';
 import { Individual, Union, UUID, GedcomNode, PersonName, GedcomEvent, MediaObject } from '../model/types';
 
 function uuid(): UUID {
@@ -360,11 +360,13 @@ export class EditService {
     const oldId = indi.mediaIds[0];
     const oldMeta = oldId ? await db.mediaMeta.get([treeId, oldId]) : undefined;
 
+    // Shrink before storing: the stored photo and the exported .gdz both use this copy.
+    const photo = await optimizePhoto(file);
     const mediaId = uuid();
-    const ext = extForType(file.type);
+    const ext = extForType(photo.type);
     const path = `media/${mediaId}.${ext}`;
-    const thumb = await makeThumbnail(file).catch(() => null);
-    await db.mediaBlobs.put({ treeId, id: mediaId, blob: file, ...(thumb ? { thumb } : {}) });
+    const thumb = await makeThumbnail(photo).catch(() => null);
+    await db.mediaBlobs.put({ treeId, id: mediaId, blob: photo, ...(thumb ? { thumb } : {}) });
 
     const objeNode = makeObjeNode(path, ext);
     const media: MediaObject = {
