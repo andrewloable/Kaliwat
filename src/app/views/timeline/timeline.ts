@@ -1,3 +1,4 @@
+import { lifeEventLabel } from '../../core/model/life-events';
 import { Component, input, computed, inject } from '@angular/core';
 import { Individual, Union, UUID } from '../../core/model/types';
 import { TreeStore } from '../../core/tree-store/tree.store';
@@ -55,7 +56,7 @@ export function buildTimeline(
   // Direct personal events
   for (const ev of person.events) {
     let kind: TimelineEntry['kind'] = 'other';
-    let label = ev.type;
+    let label = lifeEventLabel(ev);
     if (ev.type === 'BIRT') { kind = 'birth'; label = 'Born'; }
     else if (ev.type === 'DEAT') { kind = 'death'; label = 'Died'; }
     entries.push({ sortKey: parseSortKey(ev.date), date: ev.date ?? '', label, place: ev.place, kind });

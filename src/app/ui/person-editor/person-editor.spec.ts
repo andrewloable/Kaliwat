@@ -37,7 +37,7 @@ describe('extractDetails', () => {
   it('extracts EMAIL nested under RESI, un-escaping @@ and adding mailto:', () => {
     const indi = person(n('RESI', undefined, [n('EMAIL', 'andrew.loable@@gmail.com')]));
     const d = extractDetails(indi)[0];
-    expect(d).toEqual({ label: 'Email', value: 'andrew.loable@gmail.com', href: 'mailto:andrew.loable@gmail.com' });
+    expect(d).toMatchObject({ label: 'Email', value: 'andrew.loable@gmail.com', href: 'mailto:andrew.loable@gmail.com' });
   });
 
   it('extracts PHON as a tel: link with whitespace stripped', () => {
@@ -48,7 +48,7 @@ describe('extractDetails', () => {
 
   it('extracts WWW as a website link', () => {
     const d = extractDetails(person(n('WWW', 'https://loable.tech')))[0];
-    expect(d).toEqual({ label: 'Website', value: 'https://loable.tech', href: 'https://loable.tech' });
+    expect(d).toMatchObject({ label: 'Website', value: 'https://loable.tech', href: 'https://loable.tech' });
   });
 
   it('labels an EVEN whose value is a social URL and keeps it as a link', () => {
@@ -61,7 +61,7 @@ describe('extractDetails', () => {
   it('labels a non-URL EVEN by its TYPE with no link', () => {
     const indi = person(n('EVEN', 'Carpenter', [n('TYPE', 'Occupation')]));
     const d = extractDetails(indi)[0];
-    expect(d).toEqual({ label: 'Occupation', value: 'Carpenter', href: undefined });
+    expect(d).toMatchObject({ label: 'Occupation', value: 'Carpenter', href: undefined });
   });
 
   it('de-duplicates identical details', () => {

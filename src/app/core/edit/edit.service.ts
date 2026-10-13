@@ -2,8 +2,9 @@ import { Injectable, inject } from '@angular/core';
 import { TreeStore } from '../tree-store/tree.store';
 import { PersistenceService } from '../db/persistence.service';
 import { db } from '../db/kaliwat-db';
-import { makeThumbnail, optimizePhoto } from '../../gedcom/gedzip/gedzip';
+import { makeThumbnail } from '../../gedcom/gedzip/gedzip';
 import { Individual, Union, UUID, GedcomNode, PersonName, GedcomEvent, MediaObject } from '../model/types';
+import { LIFE_EVENT_TYPES } from '../model/life-events';
 
 function uuid(): UUID {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -115,6 +116,44 @@ export function orphanGroups(individuals: Individual[], unions: Union[]): UUID[]
     groups.push(group);
   }
   return groups.sort((a, b) => b.length - a.length).slice(1);
+}
+
+/** Kinds of fact the editor can add to a person's record. */
+export type FactKind = 'email' | 'phone' | 'website' | 'facebook' | 'instagram' | 'twitter' | 'linkedin';
+
+export const FACT_KINDS: { kind: FactKind; label: string; placeholder: string }[] = [
+  { kind: 'email', label: 'Email', placeholder: 'name@example.com' },
+  { kind: 'phone', label: 'Phone', placeholder: '+63 917 555 1234' },
+  { kind: 'website', label: 'Website', placeholder: 'https://example.com' },
+  { kind: 'facebook', label: 'Facebook', placeholder: 'https://facebook.com/name' },
+  { kind: 'instagram', label: 'Instagram', placeholder: 'https://instagram.com/name' },
+  { kind: 'twitter', label: 'Twitter / X', placeholder: 'https://x.com/name' },
+  { kind: 'linkedin', label: 'LinkedIn', placeholder: 'https://linkedin.com/in/name' },
+];
+
+/** Add https:// when missing and require a plausible web address; null if it isn't one. */
+function normalizeUrl(raw: string): string | null {
+  const v = raw.trim();
+  if (!v) return null;
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? v : `https://${v}`;
+  try {
+    const u = new URL(withScheme);
+    if (!/^https?:$/.test(u.protocol) || !u.hostname.includes('.')) return null;
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
+function leaf(level: number, tag: string, value: string): GedcomNode {
+  return { level, tag, value, xref: undefined, pointer: undefined, children: [] };
+}
+
+/** Remove `target` from anywhere under `node`; true if it was found. */
+function removeNode(node: GedcomNode, target: GedcomNode): boolean {
+  const i = node.children.indexOf(target);
+  if (i >= 0) { node.children.splice(i, 1); return true; }
+  return node.children.some((c) => removeNode(c, target));
 }
 
 export interface PersonFormData {
@@ -341,6 +380,101 @@ export class EditService {
     this._scheduleWrite();
   }
 
+  // ── Facts (email, phone, website, social links) ───────────────────────────
+
+  /**
+   * Add a fact to a person's record as standard GEDCOM (EMAIL / PHON / WWW, or an EVEN
+   * with the link and a TYPE for social networks), so it round-trips on export.
+   * Returns an error message, or null on success.
+   */
+  addFact(personId: UUID, kind: FactKind, raw: string): string | null {
+    const indi = this.store.individuals().find((i) => i.id === personId);
+    if (!indi?.rawRef) return 'Person not found.';
+    const value = raw.trim();
+    let node: GedcomNode;
+    if (kind === 'email') {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'Enter a valid email address.';
+      node = leaf(1, 'EMAIL', value.replace(/@/g, '@@')); // GEDCOM escapes a literal @
+    } else if (kind === 'phone') {
+      if (value.replace(/\D/g, '').length < 5) return 'Enter a valid phone number.';
+      node = leaf(1, 'PHON', value);
+    } else {
+      const url = normalizeUrl(value);
+      if (!url) return 'Enter a valid web address (for example https://example.com).';
+      if (kind === 'website') {
+        node = leaf(1, 'WWW', url);
+      } else {
+        const label = FACT_KINDS.find((k) => k.kind === kind)!.label;
+        node = leaf(1, 'EVEN', url.replace(/@/g, '@@'));
+        node.children.push(leaf(2, 'TYPE', label));
+      }
+    }
+    indi.rawRef.children.push(node);
+    this.store.upsertIndividual({ ...indi }); // new object so views re-read the record
+    this._scheduleWrite();
+    return null;
+  }
+
+  /** Remove a fact (a node from extractDetails) from a person's record. */
+  removeFact(personId: UUID, node: GedcomNode): void {
+    const indi = this.store.individuals().find((i) => i.id === personId);
+    if (!indi?.rawRef || !removeNode(indi.rawRef, node)) return;
+    this.store.upsertIndividual({ ...indi });
+    this._scheduleWrite();
+  }
+
+  // ── Life events (baptism, occupation, residence, …) ───────────────────────
+
+  /**
+   * Add a life event to a person's record as standard GEDCOM (a tag with DATE and PLAC,
+   * plus its text for occupations and the like; "other" events are an EVEN with a TYPE).
+   * Returns an error message, or null on success.
+   */
+  addLifeEvent(
+    personId: UUID,
+    input: { tag: string; date?: string; place?: string; description?: string; title?: string },
+  ): string | null {
+    const indi = this.store.individuals().find((i) => i.id === personId);
+    if (!indi?.rawRef) return 'Person not found.';
+    const type = LIFE_EVENT_TYPES.find((t) => t.tag === input.tag);
+    if (!type) return 'Choose a kind of event.';
+    const date = input.date?.trim();
+    const place = input.place?.trim();
+    const description = input.description?.trim();
+    const title = input.title?.trim();
+    if (type.custom && !title) return 'Enter a name for this event.';
+    if (type.description && ['OCCU', 'EDUC'].includes(type.tag) && !description) {
+      return `Enter the ${type.label.toLowerCase()}.`;
+    }
+    if (!date && !place && !description) return 'Enter a date, a place or a description.';
+
+    const node: GedcomNode = {
+      level: 1, tag: type.tag, value: type.description && description ? description : undefined,
+      xref: undefined, pointer: undefined, children: [],
+    };
+    if (type.custom) node.children.push(leaf(2, 'TYPE', title!));
+    if (date) node.children.push(leaf(2, 'DATE', date));
+    if (place) node.children.push(leaf(2, 'PLAC', place));
+
+    const event: GedcomEvent = {
+      type: type.tag, date, place, citations: [], notes: [],
+      ...(type.description && description ? { description } : {}), raw: node,
+    };
+    indi.rawRef.children.push(node);
+    this.store.upsertIndividual({ ...indi, events: [...indi.events, event] });
+    this._scheduleWrite();
+    return null;
+  }
+
+  /** Remove a life event (not birth or death) from a person. */
+  removeLifeEvent(personId: UUID, event: GedcomEvent): void {
+    const indi = this.store.individuals().find((i) => i.id === personId);
+    if (!indi || !indi.events.includes(event)) return;
+    if (indi.rawRef && event.raw) removeNode(indi.rawRef, event.raw);
+    this.store.upsertIndividual({ ...indi, events: indi.events.filter((e) => e !== event) });
+    this._scheduleWrite();
+  }
+
   // ── Photos ────────────────────────────────────────────────────────────────
 
   /**
@@ -360,13 +494,12 @@ export class EditService {
     const oldId = indi.mediaIds[0];
     const oldMeta = oldId ? await db.mediaMeta.get([treeId, oldId]) : undefined;
 
-    // Shrink before storing: the stored photo and the exported .gdz both use this copy.
-    const photo = await optimizePhoto(file);
+    // The photo editor has already cropped and shrunk this (400×400), so store it as is.
     const mediaId = uuid();
-    const ext = extForType(photo.type);
+    const ext = extForType(file.type);
     const path = `media/${mediaId}.${ext}`;
-    const thumb = await makeThumbnail(photo).catch(() => null);
-    await db.mediaBlobs.put({ treeId, id: mediaId, blob: photo, ...(thumb ? { thumb } : {}) });
+    const thumb = await makeThumbnail(file).catch(() => null);
+    await db.mediaBlobs.put({ treeId, id: mediaId, blob: file, ...(thumb ? { thumb } : {}) });
 
     const objeNode = makeObjeNode(path, ext);
     const media: MediaObject = {

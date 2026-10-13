@@ -1,10 +1,12 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TreeStore } from '../../core/tree-store/tree.store';
-import { EditService, PersonFormData, trimSet } from '../../core/edit/edit.service';
+import { EditService, PersonFormData, trimSet, FACT_KINDS, FactKind } from '../../core/edit/edit.service';
+import { PhotoCropComponent } from '../photo-crop/photo-crop';
 import { MediaService } from '../../media/media.service';
 import { MAX_MEDIA_BYTES } from '../../gedcom/gedzip/gedzip';
-import { Individual, GedcomNode } from '../../core/model/types';
+import { Individual, GedcomNode, GedcomEvent } from '../../core/model/types';
+import { LIFE_EVENT_TYPES, lifeEventLabel } from '../../core/model/life-events';
 
 type ConnectKind = 'parent' | 'partner' | 'child';
 
@@ -12,6 +14,7 @@ interface PersonDetail {
   label: string;
   value: string;
   href?: string; // mailto:/tel:/https: when the value is actionable
+  node?: GedcomNode; // the record node it was read from, so it can be removed
 }
 
 function lifespan(indi: Individual): string {
@@ -58,16 +61,16 @@ export function extractDetails(indi: Individual | null): PersonDetail[] {
     if (!n.value) return;
     if (n.tag === 'EMAIL') {
       const email = gedUnescape(n.value);
-      add({ label: 'Email', value: email, href: 'mailto:' + email });
+      add({ label: 'Email', value: email, href: 'mailto:' + email, node: n });
     } else if (n.tag === 'PHON') {
-      add({ label: 'Phone', value: n.value, href: 'tel:' + n.value.replace(/\s+/g, '') });
+      add({ label: 'Phone', value: n.value, href: 'tel:' + n.value.replace(/\s+/g, ''), node: n });
     } else if (n.tag === 'WWW') {
-      add({ label: 'Website', value: n.value, href: n.value });
+      add({ label: 'Website', value: n.value, href: n.value, node: n });
     } else if (n.tag === 'EVEN') {
       const value = gedUnescape(n.value);
       const type = n.children.find((c) => c.tag === 'TYPE')?.value ?? '';
       const isUrl = /^https?:\/\//i.test(value);
-      add({ label: isUrl ? factLabel(type, value) : (type || 'Fact'), value, href: isUrl ? value : undefined });
+      add({ label: isUrl ? factLabel(type, value) : (type || 'Fact'), value, href: isUrl ? value : undefined, node: n });
     }
   });
   return out;
@@ -95,7 +98,7 @@ function indi2form(indi: Individual): PersonFormData {
  */
 @Component({
   selector: 'app-person-editor',
-  imports: [FormsModule],
+  imports: [FormsModule, PhotoCropComponent],
   template: `
     @if (state() !== 'closed') {
       <div class="edit-backdrop" (click)="close()" aria-hidden="true"></div>
@@ -155,14 +158,73 @@ function indi2form(indi: Individual): PersonFormData {
               @for (d of details(); track $index) {
                 <li class="detail-row">
                   <span class="detail-label">{{ d.label }}</span>
-                  @if (d.href) {
-                    <a class="detail-value" [href]="d.href" target="_blank" rel="noopener noreferrer">{{ d.value }}</a>
-                  } @else {
-                    <span class="detail-value">{{ d.value }}</span>
-                  }
+                  <span class="detail-line">
+                    @if (d.href) {
+                      <a class="detail-value" [href]="d.href" target="_blank" rel="noopener noreferrer">{{ d.value }}</a>
+                    } @else {
+                      <span class="detail-value">{{ d.value }}</span>
+                    }
+                    @if (d.node) {
+                      <button type="button" class="delete-link" [attr.aria-label]="'Remove ' + d.label + ' ' + d.value"
+                        (click)="removeDetail(d)">Remove</button>
+                    }
+                  </span>
                 </li>
               }
             </ul>
+          }
+          @if (state() !== 'new') {
+            <div class="field-group-label">Add a fact</div>
+            <div class="fact-row">
+              <select class="field-input" aria-label="Kind of fact" [(ngModel)]="factKind" name="factKind">
+                @for (k of factKinds; track k.kind) {
+                  <option [value]="k.kind">{{ k.label }}</option>
+                }
+              </select>
+              <input class="field-input" [(ngModel)]="factValue" name="factValue" autocomplete="off"
+                aria-label="Fact value" [placeholder]="factPlaceholder()" (keydown.enter)="addFact(); $event.preventDefault()" />
+              <button type="button" class="rel-btn" (click)="addFact()">Add</button>
+            </div>
+          }
+          @if (state() !== 'new') {
+            <div class="field-group-label">Life events</div>
+            @if (lifeEvents().length) {
+              <ul class="details-list">
+                @for (ev of lifeEvents(); track ev) {
+                  <li class="detail-row">
+                    <span class="detail-label">{{ eventLabel(ev) }}</span>
+                    <span class="detail-line">
+                      <span class="detail-value">{{ eventSummary(ev) }}</span>
+                      <button type="button" class="delete-link" [attr.aria-label]="'Remove ' + eventLabel(ev)"
+                        (click)="removeLifeEvent(ev)">Remove</button>
+                    </span>
+                  </li>
+                }
+              </ul>
+            }
+            <div class="event-form">
+              <select class="field-input" aria-label="Kind of event" [(ngModel)]="eventTag" name="eventTag">
+                @for (t of eventTypes; track t.tag) {
+                  <option [value]="t.tag">{{ t.label }}</option>
+                }
+              </select>
+              @if (eventType()?.custom) {
+                <input class="field-input" [(ngModel)]="eventTitle" name="eventTitle" autocomplete="off"
+                  aria-label="Event name" placeholder="Name of the event" />
+              }
+              <div class="field-row">
+                <input class="field-input" [(ngModel)]="eventDate" name="eventDate" autocomplete="off"
+                  aria-label="Event date" placeholder="e.g. 12 MAR 1990" />
+                <input class="field-input" [(ngModel)]="eventPlace" name="eventPlace" autocomplete="off"
+                  aria-label="Event place" placeholder="Place" />
+              </div>
+              @if (eventType()?.description; as hint) {
+                <input class="field-input" [(ngModel)]="eventDescription" name="eventDescription" autocomplete="off"
+                  aria-label="Event description" [placeholder]="hint"
+                  (keydown.enter)="addLifeEvent(); $event.preventDefault()" />
+              }
+              <button type="button" class="rel-btn" (click)="addLifeEvent()">Add event</button>
+            </div>
           }
           @if (state() !== 'new') {
             <div class="field-group-label">Photo</div>
@@ -262,6 +324,9 @@ function indi2form(indi: Individual): PersonFormData {
           }
         </form>
       </aside>
+      @if (cropFile(); as f) {
+        <app-photo-crop [file]="f" (done)="onCropped($event)" (cancelled)="cropFile.set(null)" />
+      }
     }
   `,
   styles: [`
@@ -290,6 +355,11 @@ function indi2form(indi: Individual): PersonFormData {
     .edit-error { font-size: 0.875rem; color: #c0392b; margin: 0; }
     .details-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
     .detail-row { display: flex; flex-direction: column; gap: 1px; }
+    .detail-line { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
+    .fact-row { display: grid; grid-template-columns: auto 1fr auto; gap: 0.5rem; align-items: center; }
+    .event-form { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
+    .event-form .field-input { width: 100%; }
+    .event-form .field-row { width: 100%; }
     .detail-label { font-size: 0.75rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; }
     .detail-value { font-size: 0.9375rem; color: var(--ink); word-break: break-word; }
     a.detail-value { color: var(--accent); text-decoration: underline; }
@@ -379,6 +449,36 @@ export class PersonEditorComponent {
   readonly confirmingDelete = signal(false);
   form: PersonFormData = blankForm();
 
+  // Add-a-fact form (email, phone, website, social links).
+  protected readonly factKinds = FACT_KINDS;
+  factKind: FactKind = 'email';
+  factValue = '';
+  protected readonly factPlaceholder = () => FACT_KINDS.find((k) => k.kind === this.factKind)?.placeholder ?? '';
+
+  // Life events (baptism, occupation, …): the list shown, and the add form.
+  protected readonly eventTypes = LIFE_EVENT_TYPES;
+  protected readonly eventLabel = (ev: GedcomEvent) => lifeEventLabel(ev);
+  eventTag = 'BAPM';
+  eventTitle = '';
+  eventDate = '';
+  eventPlace = '';
+  eventDescription = '';
+  protected readonly eventType = () => LIFE_EVENT_TYPES.find((t) => t.tag === this.eventTag);
+  readonly lifeEvents = computed(() => {
+    const id = this.state();
+    if (id === 'closed' || id === 'new') return [];
+    const indi = this.store.individuals().find((i) => i.id === id);
+    return (indi?.events ?? []).filter((e) => e.type !== 'BIRT' && e.type !== 'DEAT');
+  });
+
+  /** "12 MAR 1990 · Iloilo · Teacher" */
+  protected eventSummary(ev: GedcomEvent): string {
+    return [ev.date, ev.place, ev.description].filter(Boolean).join(' · ') || '—';
+  }
+
+  // A picked photo waits here while the person adjusts the crop.
+  readonly cropFile = signal<Blob | null>(null);
+
   // Contact details + extra facts (email, Facebook, …) read from the raw record.
   readonly details = computed(() => {
     const id = this.state();
@@ -437,6 +537,7 @@ export class PersonEditorComponent {
   }
 
   close(): void {
+    this.cropFile.set(null);
     this.confirmingDelete.set(false);
     this.confirmingTrim.set(null);
     this.connectKind.set(null);
@@ -486,7 +587,49 @@ export class PersonEditorComponent {
       return;
     }
     this.error.set(null);
-    await this.editService.setPhoto(id, file);
+    this.cropFile.set(file); // opens the photo editor
+  }
+
+  /** The cropped photo from the editor: save it as the person's photo. */
+  async onCropped(photo: Blob): Promise<void> {
+    const id = this.state();
+    this.cropFile.set(null);
+    if (id === 'closed' || id === 'new') return;
+    await this.editService.setPhoto(id, photo);
+  }
+
+  /** Add the typed fact to the person's record. */
+  addFact(): void {
+    const id = this.state();
+    if (id === 'closed' || id === 'new') return;
+    const err = this.editService.addFact(id, this.factKind, this.factValue);
+    this.error.set(err);
+    if (!err) this.factValue = '';
+  }
+
+  /** Add the typed life event to the person's record. */
+  addLifeEvent(): void {
+    const id = this.state();
+    if (id === 'closed' || id === 'new') return;
+    const err = this.editService.addLifeEvent(id, {
+      tag: this.eventTag, date: this.eventDate, place: this.eventPlace,
+      description: this.eventDescription, title: this.eventTitle,
+    });
+    this.error.set(err);
+    if (!err) { this.eventDate = ''; this.eventPlace = ''; this.eventDescription = ''; this.eventTitle = ''; }
+  }
+
+  removeLifeEvent(ev: GedcomEvent): void {
+    const id = this.state();
+    if (id === 'closed' || id === 'new') return;
+    this.editService.removeLifeEvent(id, ev);
+  }
+
+  /** Remove a fact shown under Details. */
+  removeDetail(d: PersonDetail): void {
+    const id = this.state();
+    if (id === 'closed' || id === 'new' || !d.node) return;
+    this.editService.removeFact(id, d.node);
   }
 
   /** Remove the edited person's photo. */
