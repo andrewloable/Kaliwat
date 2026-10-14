@@ -7,6 +7,10 @@ async function add(page: Page, kind: string) {
   await page.getByRole('button', { name: `+ ${kind}` }).click();
   await expect(page.getByRole('heading', { name: new RegExp(`^Add ${kind.toLowerCase()} of `) })).toBeVisible();
 }
+async function expandAll(page: Page) {
+  await expect(panel(page).locator('details').first()).toBeAttached();
+  await panel(page).locator('details').evaluateAll((ds) => ds.forEach((d) => ((d as HTMLDetailsElement).open = true)));
+}
 const cancel = (page: Page) => page.getByRole('button', { name: 'Cancel', exact: true });
 
 async function start(page: Page, name: string) {
@@ -63,6 +67,7 @@ test.describe('phone', () => {
     await expect(page.locator('input[name="given"]')).toHaveValue('Jose');
     expect(await page.locator('.edit-panel').evaluate((e) => e.scrollTop)).toBe(0);
     await cancel(page).click();
+    await expect(panel(page)).toBeHidden();
     await open(page, 'Pedro Reyes');
     await expect(panel(page).locator('input[name="facebook"]')).toHaveValue('https://facebook.com/pedro.reyes');
     await expect(panel(page).locator('.photo-thumb')).toBeVisible();
@@ -100,7 +105,7 @@ test('Save & add another keeps the form open', async ({ page }) => {
   await page.locator('input[name="given"]').fill('A2');
   await save(page).click();
   await expect(page.locator('input[name="facebook"]')).toBeVisible();
-  await panel(page).locator('details').evaluateAll((ds) => ds.forEach((d) => ((d as HTMLDetailsElement).open = true)));
+  await expandAll(page);
   await expect(panel(page).getByText('A1 Reyes')).toBeVisible();
   await expect(panel(page).getByText('A2 Reyes')).toBeVisible();
 });
@@ -119,8 +124,9 @@ test('the other parent is required with two spouses', async ({ page }) => {
   await page.getByLabel('Other parent').selectOption({ label: 'Second' });
   await save(page).click();
   await cancel(page).click();
+  await expect(panel(page)).toBeHidden();
   await open(page, 'Kid Reyes');
-  await panel(page).locator('details').evaluateAll((ds) => ds.forEach((d) => ((d as HTMLDetailsElement).open = true)));
+  await expandAll(page);
   await expect(panel(page).getByText('Jose Reyes & Second')).toBeVisible();
 });
 
