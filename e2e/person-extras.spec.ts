@@ -1,7 +1,13 @@
 /**
  * E2E: person editor — crop a profile photo, add facts (email, Facebook), add life events.
  */
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Page, Locator } from '@playwright/test';
+
+/** Open every collapsed section of the editor panel. */
+async function expandAll(panel: Locator) {
+  await expect(panel.locator('details').first()).toBeAttached();
+  await panel.locator('details').evaluateAll((ds) => ds.forEach((d) => ((d as HTMLDetailsElement).open = true)));
+}
 
 async function openFirstPerson(page: Page) {
   await page.goto('/');
@@ -84,6 +90,7 @@ test('cancelling the photo editor saves nothing', async ({ page }) => {
 test('add an email and a Facebook link, then remove one', async ({ page }) => {
   await openFirstPerson(page);
   const panel = page.getByRole('dialog', { name: 'Edit person' });
+  await expandAll(panel);
 
   await panel.getByLabel('Fact value').fill('ana@example.com');
   await panel.getByRole('button', { name: 'Add', exact: true }).click();
@@ -107,6 +114,7 @@ test('add an email and a Facebook link, then remove one', async ({ page }) => {
 test('add and remove a life event', async ({ page }) => {
   await openFirstPerson(page);
   const panel = page.getByRole('dialog', { name: 'Edit person' });
+  await expandAll(panel);
 
   await panel.getByLabel('Kind of event').selectOption('OCCU');
   await panel.getByLabel('Event date').fill('1995');
@@ -162,4 +170,123 @@ test('the saved photo is the part you framed, not the whole image', async ({ pag
   }));
   expect(px[2]).toBeGreaterThan(200); // blue
   expect(px[0]).toBeLessThan(60);     // not red
+});
+
+test('connect as parent moves a child to the new parent; Remove disconnects', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'try a sample tree' }).click();
+  await expect(page.locator('.list-row').first()).toBeVisible({ timeout: 30_000 });
+
+  // a new person to move Ana under
+  await page.getByRole('button', { name: 'Add person' }).click();
+  await page.locator('input[name="given"]').fill('Lourdes');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.locator('.list-row .row-name').filter({ hasText: /^Lourdes$/ })).toBeVisible();
+
+  const panel = page.getByRole('dialog', { name: 'Edit person' });
+  const row = (name: string) => page.locator('.list-row .row-name').filter({ hasText: new RegExp(`^${name}$`) });
+
+  // Ana starts as a child of Maria and Jose
+  await row('Ana Reyes').click();
+  await expandAll(panel);
+  await expect(panel.getByRole('button', { name: /Remove as child of .*Maria Santos/ })).toBeVisible();
+
+  // connect as parent → she moves; she is no longer their child
+  await panel.getByRole('button', { name: 'As parent' }).click();
+  await panel.getByPlaceholder(/Search someone to connect as parent/).fill('Lourdes');
+  await panel.locator('.connect-item', { hasText: 'Lourdes' }).click();
+  await expect(panel.getByRole('button', { name: /Remove as child of Lourdes/ })).toBeVisible();
+  await expect(panel.getByRole('button', { name: /Remove as child of .*Maria Santos/ })).toHaveCount(0);
+
+  // Maria's children list no longer has Ana
+  await panel.getByRole('button', { name: 'Cancel' }).click();
+  await row('Maria Santos').click();
+  await expandAll(panel);
+  await expect(panel.getByRole('button', { name: 'Remove as parent of Carlos Reyes' })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Remove as parent of Ana Reyes' })).toHaveCount(0);
+  await panel.getByRole('button', { name: 'Cancel' }).click();
+
+  // Remove as child disconnects her completely
+  await row('Ana Reyes').click();
+  await expandAll(panel);
+  await panel.getByRole('button', { name: /Remove as child of Lourdes/ }).click();
+  await expect(panel.getByRole('button', { name: /Remove as child of/ })).toHaveCount(0);
+
+  // an existing link is refused with a message
+  await panel.getByRole('button', { name: 'As parent' }).click();
+  await panel.getByPlaceholder(/Search someone to connect as parent/).fill('Lourdes');
+  await panel.locator('.connect-item', { hasText: 'Lourdes' }).click();
+  await panel.getByRole('button', { name: 'As parent' }).click();
+  await panel.getByPlaceholder(/Search someone to connect as parent/).fill('Lourdes');
+  await panel.locator('.connect-item', { hasText: 'Lourdes' }).click();
+  await expect(panel.getByRole('alert')).toContainText('already linked');
+});
+
+test('a life event survives Save', async ({ page }) => {
+  await openFirstPerson(page);
+  const panel = page.getByRole('dialog', { name: 'Edit person' });
+  await expandAll(panel);
+  await panel.getByLabel('Event date').fill('1 JAN 1975');
+  await panel.getByRole('button', { name: 'Add event' }).click();
+  await expect(panel.getByRole('button', { name: 'Remove Baptism' })).toBeVisible();
+  await panel.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(panel).toBeHidden();
+  await page.locator('.list-row').first().click();
+  await expandAll(panel);
+  await expect(panel.getByRole('button', { name: 'Remove Baptism' })).toBeVisible();
+});
+
+test.describe('typed but not added values', () => {
+  const save = (panel: ReturnType<Page['getByRole']>) => panel.getByRole('button', { name: 'Save', exact: true }).click();
+
+  test('a typed Facebook link is saved by Save', async ({ page }) => {
+    await openFirstPerson(page);
+    const panel = page.getByRole('dialog', { name: 'Edit person' });
+    await expandAll(panel);
+  await expandAll(panel);
+    await panel.getByLabel('Kind of fact').selectOption('facebook');
+    await panel.getByLabel('Fact value').fill('facebook.com/someone');
+    await save(panel);
+    await expect(panel).toBeHidden();
+    await page.locator('.list-row').first().click();
+    await expandAll(panel);
+    await expect(panel.locator('input[name="facebook"]')).toHaveValue('https://facebook.com/someone');
+  });
+
+  test('an invalid typed email blocks Save', async ({ page }) => {
+    await openFirstPerson(page);
+    const panel = page.getByRole('dialog', { name: 'Edit person' });
+    await expandAll(panel);
+  await expandAll(panel);
+    await panel.getByLabel('Kind of fact').selectOption('email');
+    await panel.getByLabel('Fact value').fill('nope');
+    await save(panel);
+    await expect(panel.getByRole('alert')).toContainText('Enter a valid email address.');
+    await expect(panel).toBeVisible();
+    await expect(panel.getByLabel('Fact value')).toHaveValue('nope');
+  });
+
+  test('a typed life event is saved by Save', async ({ page }) => {
+    await openFirstPerson(page);
+    const panel = page.getByRole('dialog', { name: 'Edit person' });
+    await expandAll(panel);
+  await expandAll(panel);
+    await panel.getByLabel('Event date').fill('1 JAN 1975');
+    await save(panel);
+    await expect(panel).toBeHidden();
+    await page.locator('.list-row').first().click();
+    await expandAll(panel);
+    await expect(panel.getByRole('button', { name: 'Remove Baptism' })).toBeVisible();
+  });
+
+  test('Save with empty fact and event fields saves normally', async ({ page }) => {
+    await openFirstPerson(page);
+    const panel = page.getByRole('dialog', { name: 'Edit person' });
+    await expandAll(panel);
+  await expandAll(panel);
+    await panel.locator('input[name="given"]').fill('Anna');
+    await save(panel);
+    await expect(panel).toBeHidden();
+    await expect(page.locator('.row-name').filter({ hasText: 'Anna Reyes' })).toBeVisible();
+  });
 });

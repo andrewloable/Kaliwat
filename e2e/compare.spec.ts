@@ -25,8 +25,10 @@ const row = (page: Page, name: string) => page.locator('.list-row .row-name').fi
 async function addRelative(page: Page, of: string, kind: '+ Parent' | '+ Child', given: string) {
   await row(page, of).click();
   await page.getByRole('button', { name: kind }).click();
+  await expect(page.getByRole('heading', { name: /^Add (parent|child) of / })).toBeVisible();
   await page.locator('input[name="given"]').fill(given);
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click(); // back on the start person: close it
   await expect(row(page, given)).toBeVisible();
 }
 

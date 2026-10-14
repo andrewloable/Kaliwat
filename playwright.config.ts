@@ -8,7 +8,11 @@ export default defineConfig({
   fullyParallel: true,
   retries: process.env['CI'] ? 2 : 0,
   use: { baseURL: 'http://localhost:4173', trace: 'on-first-retry' },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    // Import is the Firefox-sensitive flow (storage.persist() prompt); the rest is engine-neutral.
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] }, testMatch: /import\.spec\.ts/ },
+  ],
   webServer: {
     command: 'npx serve dist/kaliwat/browser -l 4173 -s',
     url: 'http://localhost:4173',

@@ -43,7 +43,7 @@ test.describe('Editing + onboarding', () => {
     // Fill in the form
     await page.locator('input[name="given"]').fill('María');
     await page.locator('input[name="surname"]').fill('García');
-    await page.locator('select[name="sex"]').selectOption('F');
+    await page.getByRole('radio', { name: 'Female' }).check();
     await page.locator('input[name="birthDate"]').fill('15 JUN 1985');
 
     await page.getByRole('button', { name: 'Save' }).click();

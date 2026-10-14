@@ -1,8 +1,10 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, Injector, afterNextRender, computed, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TreeStore } from '../../core/tree-store/tree.store';
-import { EditService, PersonFormData, trimSet, FACT_KINDS, FactKind } from '../../core/edit/edit.service';
+import { EditService, PersonFormData, trimSet, validateFact, FACT_KINDS, FactKind } from '../../core/edit/edit.service';
 import { PhotoCropComponent } from '../photo-crop/photo-crop';
+import { QuickAddRelativeComponent } from './quick-add-relative';
+import type { RelativeKind } from '../../core/edit/relative-defaults';
 import { MediaService } from '../../media/media.service';
 import { MAX_MEDIA_BYTES } from '../../gedcom/gedzip/gedzip';
 import { Individual, GedcomNode, GedcomEvent } from '../../core/model/types';
@@ -98,64 +100,109 @@ function indi2form(indi: Individual): PersonFormData {
  */
 @Component({
   selector: 'app-person-editor',
-  imports: [FormsModule, PhotoCropComponent],
+  imports: [FormsModule, PhotoCropComponent, QuickAddRelativeComponent],
   template: `
     @if (state() !== 'closed') {
       <div class="edit-backdrop" (click)="close()" aria-hidden="true"></div>
-      <aside class="edit-panel" role="dialog" aria-modal="true" [attr.aria-label]="state() === 'new' ? 'Add person' : 'Edit person'">
+      <aside #panel class="edit-panel" role="dialog" aria-modal="true"
+        [attr.aria-label]="quickAdd() ? 'Add relative' : state() === 'new' ? 'Add person' : 'Edit person'">
+        @if (quickAdd(); as kind) {
+          <app-quick-add-relative [anchorId]="state()" [kind]="kind" (done)="backToAnchor()" (cancelled)="backToAnchor()" />
+        } @else {
         <h2 class="panel-title">{{ state() === 'new' ? 'Add person' : 'Edit person' }}</h2>
         <form class="edit-form" (ngSubmit)="save()">
-          <div class="field-row">
-            <label>
-              Given name
-              <input class="field-input" [(ngModel)]="form.given" name="given" required autocomplete="off" />
-            </label>
-            <label>
-              Surname
-              <input class="field-input" [(ngModel)]="form.surname" name="surname" autocomplete="off" />
-            </label>
+          <div class="essentials">
+            @if (state() !== 'new') {
+            <div class="photo-col">
+              @if (photoUrl(); as url) {
+                <img class="photo-thumb" [src]="url" alt="Photo of this person" />
+              } @else {
+                <div class="photo-placeholder" aria-hidden="true">No photo</div>
+              }
+              <div class="photo-actions">
+                <label class="rel-btn photo-pick">
+                  {{ photoUrl() ? 'Replace photo' : 'Add photo' }}
+                  <input type="file" accept="image/*" hidden (change)="onPickPhoto($event)" />
+                </label>
+                @if (photoUrl()) {
+                  <button type="button" class="delete-link" (click)="onRemovePhoto()">Remove photo</button>
+                }
+              </div>
+            </div>
+            }
+            <div class="names">
+              <label>
+                Given name
+                <input class="field-input" [(ngModel)]="form.given" name="given" required autocomplete="off" />
+              </label>
+              <label>
+                Surname
+                <input class="field-input" [(ngModel)]="form.surname" name="surname" autocomplete="off" />
+              </label>
+            </div>
           </div>
+          <fieldset class="sex">
+            <legend>Sex</legend>
+            @for (o of sexOptions; track o.v) {
+              <label class="sex-opt">
+                <input type="radio" name="sex" [value]="o.v" [(ngModel)]="form.sex" />
+                <span>{{ o.label }}</span>
+              </label>
+            }
+          </fieldset>
           <label>
-            Sex
-            <select class="field-input" [(ngModel)]="form.sex" name="sex">
-              <option value="M">Male</option>
-              <option value="F">Female</option>
-              <option value="U">Unknown</option>
-            </select>
+            Facebook
+            <input class="field-input" name="facebook" type="url" inputmode="url" autocomplete="off"
+              placeholder="facebook.com/name" [value]="facebook()" (input)="facebook.set(fb.value)" #fb />
           </label>
-          <div class="field-group-label">Birth</div>
-          <div class="field-row">
-            <label>
-              Date
-              <input class="field-input" [(ngModel)]="form.birthDate" name="birthDate" placeholder="e.g. 15 JUN 1940" autocomplete="off" />
-            </label>
-            <label>
-              Place
-              <input class="field-input" [(ngModel)]="form.birthPlace" name="birthPlace" autocomplete="off" />
-            </label>
-          </div>
-          <div class="field-group-label">Death</div>
-          <div class="field-row">
-            <label>
-              Date
-              <input class="field-input" [(ngModel)]="form.deathDate" name="deathDate" placeholder="e.g. 3 MAR 2010" autocomplete="off" />
-            </label>
-            <label>
-              Place
-              <input class="field-input" [(ngModel)]="form.deathPlace" name="deathPlace" autocomplete="off" />
-            </label>
-          </div>
-          <label>
-            Notes
-            <textarea class="field-input field-textarea" [(ngModel)]="form.notes" name="notes" rows="3"></textarea>
-          </label>
-          @if (error()) {
-            <p class="edit-error" role="alert">{{ error() }}</p>
+          @if (state() !== 'new') {
+            <div class="field-group-label">Add relative</div>
+            <div class="relatives">
+              <button type="button" class="rel-btn" (click)="addRelative('parent')">+ Parent</button>
+              <button type="button" class="rel-btn" (click)="addRelative('spouse')">+ Spouse</button>
+              <button type="button" class="rel-btn" (click)="addRelative('sibling')">+ Sibling</button>
+              <button type="button" class="rel-btn" (click)="addRelative('child')">+ Child</button>
+            </div>
           }
-          @if (details().length) {
-            <div class="field-group-label">Details</div>
+
+          <details class="section" [open]="state() === 'new'">
+            <summary>Birth &amp; death{{ lifeSummary() }}</summary>
+            <div class="section-body">
+              <div class="field-row">
+                <label>
+                  Birth date
+                  <input class="field-input" [(ngModel)]="form.birthDate" name="birthDate" placeholder="e.g. 15 JUN 1940" autocomplete="off" />
+                </label>
+                <label>
+                  Birth place
+                  <input class="field-input" [(ngModel)]="form.birthPlace" name="birthPlace" autocomplete="off" />
+                </label>
+              </div>
+              <div class="field-row">
+                <label>
+                  Death date
+                  <input class="field-input" [(ngModel)]="form.deathDate" name="deathDate" placeholder="e.g. 3 MAR 2010" autocomplete="off" />
+                </label>
+                <label>
+                  Death place
+                  <input class="field-input" [(ngModel)]="form.deathPlace" name="deathPlace" autocomplete="off" />
+                </label>
+              </div>
+            </div>
+          </details>
+          <details class="section">
+            <summary>Notes{{ form.notes ? ' · added' : '' }}</summary>
+            <div class="section-body">
+              <textarea class="field-input field-textarea" [(ngModel)]="form.notes" name="notes" rows="3" aria-label="Notes"></textarea>
+            </div>
+          </details>
+          @if (state() !== 'new') {
+            <details class="section">
+              <summary>Contacts &amp; facts ({{ otherDetails().length }})</summary>
+              <div class="section-body">
+                @if (otherDetails().length) {
             <ul class="details-list">
-              @for (d of details(); track $index) {
+              @for (d of otherDetails(); track $index) {
                 <li class="detail-row">
                   <span class="detail-label">{{ d.label }}</span>
                   <span class="detail-line">
@@ -172,9 +219,8 @@ function indi2form(indi: Individual): PersonFormData {
                 </li>
               }
             </ul>
-          }
-          @if (state() !== 'new') {
-            <div class="field-group-label">Add a fact</div>
+                }
+                <div class="field-group-label">Add a fact</div>
             <div class="fact-row">
               <select class="field-input" aria-label="Kind of fact" [(ngModel)]="factKind" name="factKind">
                 @for (k of factKinds; track k.kind) {
@@ -185,9 +231,11 @@ function indi2form(indi: Individual): PersonFormData {
                 aria-label="Fact value" [placeholder]="factPlaceholder()" (keydown.enter)="addFact(); $event.preventDefault()" />
               <button type="button" class="rel-btn" (click)="addFact()">Add</button>
             </div>
-          }
-          @if (state() !== 'new') {
-            <div class="field-group-label">Life events</div>
+              </div>
+            </details>
+            <details class="section">
+              <summary>Life events ({{ lifeEvents().length }})</summary>
+              <div class="section-body">
             @if (lifeEvents().length) {
               <ul class="details-list">
                 @for (ev of lifeEvents(); track ev) {
@@ -225,37 +273,52 @@ function indi2form(indi: Individual): PersonFormData {
               }
               <button type="button" class="rel-btn" (click)="addLifeEvent()">Add event</button>
             </div>
-          }
-          @if (state() !== 'new') {
-            <div class="field-group-label">Photo</div>
-            <div class="photo-row">
-              @if (photoUrl(); as url) {
-                <img class="photo-thumb" [src]="url" alt="Photo of this person" />
-              } @else {
-                <div class="photo-placeholder" aria-hidden="true">No photo</div>
-              }
-              <div class="photo-actions">
-                <label class="rel-btn photo-pick">
-                  {{ photoUrl() ? 'Replace photo' : 'Add photo' }}
-                  <input type="file" accept="image/*" hidden (change)="onPickPhoto($event)" />
-                </label>
-                @if (photoUrl()) {
-                  <button type="button" class="delete-link" (click)="onRemovePhoto()">Remove photo</button>
-                }
               </div>
-            </div>
-          }
-          @if (state() !== 'new') {
-            <div class="field-group-label">Add relative</div>
-            <div class="relatives">
-              <button type="button" class="rel-btn" (click)="addRelative('parent')">+ Parent</button>
-              <button type="button" class="rel-btn" (click)="addRelative('spouse')">+ Spouse</button>
-              <button type="button" class="rel-btn" (click)="addRelative('sibling')">+ Sibling</button>
-              <button type="button" class="rel-btn" (click)="addRelative('child')">+ Child</button>
-            </div>
-          }
-          @if (state() !== 'new') {
-            <div class="field-group-label">Connect existing person</div>
+            </details>
+            @if (relations().any) {
+              <details class="section">
+                <summary>Family links ({{ relationCount() }})</summary>
+                <div class="section-body">
+            <ul class="details-list">
+              @for (f of relations().parents; track f.unionId) {
+                <li class="detail-row">
+                  <span class="detail-label">Parents</span>
+                  <span class="detail-line">
+                    <span class="detail-value">{{ f.label }}</span>
+                    <button type="button" class="delete-link" [attr.aria-label]="'Remove as child of ' + f.label"
+                      (click)="removeAsChild(f.unionId)">Remove as child</button>
+                  </span>
+                </li>
+              }
+              @for (p of relations().partners; track p.unionId + p.personId) {
+                <li class="detail-row">
+                  <span class="detail-label">Spouse / partner</span>
+                  <span class="detail-line">
+                    <span class="detail-value">{{ p.name }}</span>
+                    <button type="button" class="delete-link" [attr.aria-label]="'Remove as spouse of ' + p.name"
+                      title="Their children stay with the other parent"
+                      (click)="removeAsSpouse(p.unionId)">Remove as spouse</button>
+                  </span>
+                </li>
+              }
+              @for (c of relations().children; track c.unionId + c.childId) {
+                <li class="detail-row">
+                  <span class="detail-label">Child</span>
+                  <span class="detail-line">
+                    <span class="detail-value">{{ c.name }}</span>
+                    <button type="button" class="delete-link" [attr.aria-label]="'Remove as parent of ' + c.name"
+                      (click)="removeAsParent(c.childId, c.unionId)">Remove as parent</button>
+                  </span>
+                </li>
+              }
+            </ul>
+                </div>
+              </details>
+            }
+            <details class="section">
+              <summary>Connect existing person</summary>
+              <div class="section-body">
+            <p class="connect-note">Connecting as a parent or child moves them out of their current family.</p>
             @if (!connectKind()) {
               <div class="relatives">
                 <button type="button" class="rel-btn" (click)="startConnect('parent')">As parent</button>
@@ -282,14 +345,12 @@ function indi2form(indi: Individual): PersonFormData {
                 <button type="button" class="keep-btn" (click)="cancelConnect()">Cancel</button>
               </div>
             }
-          }
-          <div class="panel-actions">
-            <button class="cancel-btn" type="button" (click)="close()">Cancel</button>
-            <button class="save-btn" type="submit">Save</button>
-          </div>
-          @if (state() !== 'new' && trimOptions().length > 1) {
-            <div class="connect-picker">
-              <div class="field-group-label">Trim branch</div>
+              </div>
+            </details>
+            @if (trimOptions().length > 1) {
+              <details class="section">
+                <summary>Trim branch</summary>
+                <div class="section-body connect-picker">
               @if (confirmingTrim(); as t) {
                 <span class="confirm-text">
                   Keep only {{ t.label }}
@@ -309,9 +370,9 @@ function indi2form(indi: Individual): PersonFormData {
                   }
                 </div>
               }
-            </div>
-          }
-          @if (state() !== 'new') {
+                </div>
+              </details>
+            }
             <div class="danger-row">
               @if (!confirmingDelete()) {
                 <button type="button" class="delete-link" (click)="confirmingDelete.set(true)">Delete this person</button>
@@ -322,7 +383,17 @@ function indi2form(indi: Individual): PersonFormData {
               }
             </div>
           }
+          <div class="panel-footer">
+            @if (error()) {
+              <p class="edit-error" role="alert">{{ error() }}</p>
+            }
+            <div class="panel-actions">
+              <button class="cancel-btn" type="button" (click)="close()">Cancel</button>
+              <button class="save-btn" type="submit">Save</button>
+            </div>
+          </div>
         </form>
+        }
       </aside>
       @if (cropFile(); as f) {
         <app-photo-crop [file]="f" (done)="onCropped($event)" (cancelled)="cropFile.set(null)" />
@@ -335,16 +406,39 @@ function indi2form(indi: Individual): PersonFormData {
       position: fixed; top: 0; right: 0; bottom: 0;
       width: min(420px, 100vw);
       background: var(--paper); z-index: 101;
-      padding: 1.5rem 1.25rem;
+      padding: 1.5rem 1.25rem 0;
       overflow-y: auto;
       display: flex; flex-direction: column; gap: 1rem;
       box-shadow: -4px 0 24px rgba(0,0,0,.12);
     }
     .panel-title { font-family: var(--font-serif); font-size: 1.375rem; margin: 0; color: var(--ink); }
     .edit-form { display: flex; flex-direction: column; gap: 0.875rem; }
-    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    .essentials { display: flex; gap: 0.875rem; align-items: flex-start; }
+    .names { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+    .photo-col { display: flex; flex-direction: column; align-items: flex-start; gap: 0.4rem; }
+    .sex { display: flex; gap: 0.5rem; border: none; margin: 0; padding: 0; }
+    .sex legend { font-size: 0.8125rem; color: var(--ink-soft); padding: 0; margin-bottom: 0.3rem; }
+    .sex-opt {
+      flex: 1; flex-direction: row; align-items: center; justify-content: center; gap: 0.4rem;
+      min-height: 44px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-2);
+      font-size: 0.9375rem; color: var(--ink); cursor: pointer;
+      &:has(input:checked) { border-color: var(--accent); color: var(--accent); }
+    }
+    .section { border-top: 1px solid var(--line); }
+    .section summary {
+      min-height: 44px; display: flex; align-items: center; cursor: pointer;
+      font-size: 0.75rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .05em; font-weight: 600;
+    }
+    .section-body { display: flex; flex-direction: column; gap: 0.75rem; padding-bottom: 0.75rem; }
+    .panel-footer {
+      position: sticky; bottom: 0; z-index: 1; background: var(--paper);
+      border-top: 1px solid var(--line); padding: 0.75rem 0;
+      display: flex; flex-direction: column; gap: 0.5rem;
+    }
+    .field-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.75rem; }
     label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.8125rem; color: var(--ink-soft); }
     .field-input {
+      min-width: 0;
       padding: 0.4rem 0.6rem; border: 1px solid var(--line);
       border-radius: 6px; background: var(--paper-2);
       font-size: 0.9375rem; color: var(--ink);
@@ -355,8 +449,9 @@ function indi2form(indi: Individual): PersonFormData {
     .edit-error { font-size: 0.875rem; color: #c0392b; margin: 0; }
     .details-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
     .detail-row { display: flex; flex-direction: column; gap: 1px; }
+    .connect-note { margin: 0; font-size: 0.8125rem; color: var(--ink-soft); }
     .detail-line { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
-    .fact-row { display: grid; grid-template-columns: auto 1fr auto; gap: 0.5rem; align-items: center; }
+    .fact-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; }
     .event-form { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
     .event-form .field-input { width: 100%; }
     .event-form .field-row { width: 100%; }
@@ -416,7 +511,7 @@ function indi2form(indi: Individual): PersonFormData {
     .ci-name { font-family: var(--font-serif); font-size: 0.95rem; color: var(--ink); }
     .ci-years { font-size: 0.8125rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
     .ci-empty { padding: 0.6rem 0.7rem; font-size: 0.875rem; color: var(--ink-soft); font-style: italic; }
-    .panel-actions { display: flex; gap: 0.75rem; justify-content: flex-end; padding-top: 0.25rem; }
+    .panel-actions { display: flex; gap: 0.75rem; justify-content: flex-end; }
     .cancel-btn {
       padding: 0.5rem 1rem; background: transparent;
       border: 1px solid var(--line); border-radius: 7px;
@@ -447,6 +542,16 @@ export class PersonEditorComponent {
   readonly state = signal<'closed' | 'new' | string>('closed');
   readonly error = signal<string | null>(null);
   readonly confirmingDelete = signal(false);
+  readonly quickAdd = signal<RelativeKind | null>(null);
+  protected readonly sexOptions: { v: 'M' | 'F' | 'U'; label: string }[] = [
+    { v: 'M', label: 'Male' }, { v: 'F', label: 'Female' }, { v: 'U', label: 'Unknown' },
+  ];
+  // Facebook link edited in the essentials block; applied on Save.
+  readonly facebook = signal('');
+  private fbNode: GedcomNode | undefined;
+  private fbOriginal = '';
+  private readonly panel = viewChild<ElementRef<HTMLElement>>('panel');
+  private readonly injector = inject(Injector);
   form: PersonFormData = blankForm();
 
   // Add-a-fact form (email, phone, website, social links).
@@ -486,6 +591,22 @@ export class PersonEditorComponent {
     return extractDetails(this.store.individuals().find((i) => i.id === id) ?? null);
   });
 
+  /** Details minus the Facebook link that has its own field. */
+  readonly otherDetails = computed(() => this.details().filter((d) => d.node !== this.fbNode || !this.fbNode));
+  readonly relationCount = computed(() => {
+    const r = this.relations();
+    return r.parents.length + r.partners.length + r.children.length;
+  });
+  /** " · b. 7 JAN 1968 · d. 3 MAR 2018" for the collapsed Birth & death summary. */
+  protected lifeSummary(): string {
+    const f = this.form;
+    const part = (tag: string, date?: string, place?: string) => {
+      const v = [date, place].filter(Boolean).join(', ');
+      return v ? ` · ${tag} ${v}` : '';
+    };
+    return part('b.', f.birthDate, f.birthPlace) + part('d.', f.deathDate, f.deathPlace);
+  }
+
   // Trim branch: one "keep this side" option per union this person belongs to (as
   // child or partner), with how many people keeping only that side would delete.
   readonly trimOptions = computed(() => {
@@ -504,6 +625,25 @@ export class PersonEditorComponent {
       });
   });
   readonly confirmingTrim = signal<{ unionId: string; label: string; count: number } | null>(null);
+
+  // The person's family links, each removable: their parents' family, partners, children.
+  readonly relations = computed(() => {
+    const id = this.state();
+    const none = { parents: [] as { unionId: string; label: string }[], partners: [] as { unionId: string; personId: string; name: string }[],
+      children: [] as { unionId: string; childId: string; name: string }[], any: false };
+    if (id === 'closed' || id === 'new') return none;
+    const names = new Map(this.store.individuals().map((i) => [i.id, i.names[0]?.full || '(no name)']));
+    const nm = (x: string) => names.get(x) ?? '(unknown)';
+    const unions = this.store.unions();
+    const parents = unions
+      .filter((u) => u.childLinks.some((c) => c.childId === id))
+      .map((u) => ({ unionId: u.id, label: u.spouseIds.map(nm).join(' & ') || '(parents not recorded)' }));
+    const mine = unions.filter((u) => u.spouseIds.includes(id));
+    const partners = mine.flatMap((u) => u.spouseIds.filter((s) => s !== id)
+      .map((s) => ({ unionId: u.id, personId: s, name: nm(s) })));
+    const children = mine.flatMap((u) => u.childLinks.map((c) => ({ unionId: u.id, childId: c.childId, name: nm(c.childId) })));
+    return { parents, partners, children, any: parents.length + partners.length + children.length > 0 };
+  });
 
   // Connect-to-existing-person picker.
   readonly connectKind = signal<ConnectKind | null>(null);
@@ -525,6 +665,9 @@ export class PersonEditorComponent {
     this.confirmingTrim.set(null);
     this.connectKind.set(null);
     this.connectQuery.set('');
+    this.fbNode = undefined;
+    this.fbOriginal = '';
+    this.facebook.set('');
     if (target === 'new') {
       this.form = blankForm();
       this.state.set('new');
@@ -532,11 +675,16 @@ export class PersonEditorComponent {
     }
     const indi = this.store.individuals().find((i) => i.id === target);
     if (!indi) return;
+    const fb = extractDetails(indi).find((d) => d.label === 'Facebook' && d.node);
+    this.fbNode = fb?.node;
+    this.fbOriginal = fb?.value ?? '';
+    this.facebook.set(this.fbOriginal);
     this.form = indi2form(indi);
     this.state.set(target);
   }
 
   close(): void {
+    this.quickAdd.set(null);
     this.cropFile.set(null);
     this.confirmingDelete.set(false);
     this.confirmingTrim.set(null);
@@ -561,17 +709,19 @@ export class PersonEditorComponent {
     this.confirmingTrim.set(null);
   }
 
-  /** Create a blank relative wired to the person being edited, then switch the
-   *  editor to the new person so the user can name them. */
-  addRelative(kind: 'parent' | 'spouse' | 'sibling' | 'child'): void {
+  /** Open the quick-add form for a relative; nothing is created until it is saved. */
+  addRelative(kind: RelativeKind): void {
     const id = this.state();
     if (id === 'closed' || id === 'new') return;
-    const newId =
-      kind === 'parent' ? this.editService.addParent(id)
-      : kind === 'spouse' ? this.editService.addSpouse(id)
-      : kind === 'sibling' ? this.editService.addSibling(id)
-      : this.editService.addChild(id);
-    this.open(newId);
+    this.error.set(null);
+    this.quickAdd.set(kind);
+  }
+
+  /** Leave the quick-add form and show the person it was started from, top of the panel.
+   *  Their unsaved edits are untouched (the form is only hidden). */
+  backToAnchor(): void {
+    this.quickAdd.set(null);
+    afterNextRender(() => { const el = this.panel()?.nativeElement; if (el) el.scrollTop = 0; }, { injector: this.injector });
   }
 
   /** Add or replace the edited person's photo from a chosen image file. */
@@ -596,6 +746,23 @@ export class PersonEditorComponent {
     this.cropFile.set(null);
     if (id === 'closed' || id === 'new') return;
     await this.editService.setPhoto(id, photo);
+  }
+
+  /** Remove the edited person as a child of the family `unionId`. */
+  removeAsChild(unionId: string): void {
+    const id = this.state();
+    if (id !== 'closed' && id !== 'new') this.editService.removeChildLink(id, unionId);
+  }
+
+  /** Remove the edited person as a spouse in the family `unionId`. */
+  removeAsSpouse(unionId: string): void {
+    const id = this.state();
+    if (id !== 'closed' && id !== 'new') this.editService.removeSpouse(id, unionId);
+  }
+
+  /** Remove a child of the edited person (they stop being the person's child). */
+  removeAsParent(childId: string, unionId: string): void {
+    this.editService.removeChildLink(childId, unionId);
   }
 
   /** Add the typed fact to the person's record. */
@@ -672,8 +839,31 @@ export class PersonEditorComponent {
       return;
     }
     const state = this.state();
-    if (state === 'new') this.editService.createIndividual(this.form);
-    else this.editService.updateIndividual(state, this.form);
+    const fb = this.facebook().trim();
+    const fbChanged = fb !== this.fbOriginal;
+    const bad = fbChanged && fb ? validateFact('facebook', fb) : null;
+    if (bad) { this.error.set(bad); return; }
+    if (state !== 'new' && !this._flushPending(state)) return;
+    const id = state === 'new' ? this.editService.createIndividual(this.form) : state;
+    if (state !== 'new') this.editService.updateIndividual(state, this.form);
+    if (fbChanged) {
+      if (this.fbNode) this.editService.removeFact(id, this.fbNode);
+      if (fb) this.editService.addFact(id, 'facebook', fb);
+    }
     this.close();
+  }
+
+  /** Save what was typed into the fact / life-event rows but never added. False if it was invalid. */
+  private _flushPending(id: string): boolean {
+    if (this.factValue.trim()) {
+      const err = this.editService.addFact(id, this.factKind, this.factValue);
+      if (err) { this.error.set(err); return false; }
+      this.factValue = '';
+    }
+    if ([this.eventDate, this.eventPlace, this.eventDescription, this.eventTitle].some((v) => v.trim())) {
+      this.addLifeEvent();
+      if (this.error()) return false;
+    }
+    return true;
   }
 }

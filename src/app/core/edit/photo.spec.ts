@@ -74,4 +74,45 @@ describe('EditService photos', () => {
     expect(await db.mediaBlobs.get([treeId, mediaId])).toBeUndefined();
     expect(objeCount(indi.rawRef!.children)).toBe(0);
   });
+
+  describe('deleting people cleans up their photos', () => {
+    const mediaId = (id: string) => store.individuals().find((i) => i.id === id)!.mediaIds[0];
+    const blob = (m: string) => db.mediaBlobs.get([treeId, m]);
+
+    it('deletes_photo_of_removed_person', async () => {
+      const a = service.createIndividual({ given: 'A', surname: 'B', sex: 'F' });
+      await service.setPhoto(a, img());
+      const m = mediaId(a);
+      service.deleteIndividual(a);
+      await vi.waitFor(async () => expect(await blob(m)).toBeUndefined());
+      expect(await db.mediaMeta.get([treeId, m])).toBeUndefined();
+    });
+
+    it('keeps_photo_shared_with_kept_person', async () => {
+      const a = service.createIndividual({ given: 'A', surname: 'B', sex: 'F' });
+      const b = service.createIndividual({ given: 'C', surname: 'D', sex: 'M' });
+      await service.setPhoto(a, img());
+      const m = mediaId(a);
+      const kept = store.individuals().find((i) => i.id === b)!;
+      store.upsertIndividual({ ...kept, mediaIds: [m] });
+      service.deletePeople([a]);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(await blob(m)).toBeDefined();
+    });
+
+    it('keeps_photo_referenced_by_kept_family', async () => {
+      const a = service.createIndividual({ given: 'A', surname: 'B', sex: 'F' });
+      const b = service.createIndividual({ given: 'C', surname: 'D', sex: 'M' });
+      const c = service.createIndividual({ given: 'E', surname: 'F', sex: 'M' });
+      service.linkSpouses(b, c);
+      await service.setPhoto(a, img());
+      const m = mediaId(a);
+      const file = (await db.mediaMeta.get([treeId, m]))!.data.file!;
+      const fam = store.unions().find((u) => u.spouseIds.includes(b))!;
+      fam.rawRef!.children.push({ level: 1, tag: 'OBJE', children: [{ level: 2, tag: 'FILE', value: file, children: [] }] });
+      service.deletePeople([a]);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(await blob(m)).toBeDefined();
+    });
+  });
 });

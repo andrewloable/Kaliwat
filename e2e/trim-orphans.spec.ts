@@ -23,9 +23,10 @@ async function clearDb(page: Page) {
 
 const row = (page: Page, name: string) => page.locator('.list-row .row-name').filter({ hasText: new RegExp(`^${name}$`) });
 
-async function nameAndSave(page: Page, given: string) {
+async function nameAndSave(page: Page, given: string, quickAdd = false) {
   await page.locator('input[name="given"]').fill(given);
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  if (quickAdd) await page.getByRole('button', { name: 'Cancel', exact: true }).click(); // back on the start person: close it
   await expect(row(page, given)).toBeVisible();
 }
 
@@ -46,14 +47,17 @@ test.describe('Trim branch + orphan cleanup', () => {
     await nameAndSave(page, 'Me');
     await row(page, 'Me').click();
     await page.getByRole('button', { name: '+ Parent' }).click();
-    await nameAndSave(page, 'Dad');
+    await expect(page.getByRole('heading', { name: /^Add parent of / })).toBeVisible();
+    await nameAndSave(page, 'Dad', true);
     await row(page, 'Dad').click();
     await page.getByRole('button', { name: '+ Parent' }).click();
-    await nameAndSave(page, 'Grandpa');
+    await expect(page.getByRole('heading', { name: /^Add parent of / })).toBeVisible();
+    await nameAndSave(page, 'Grandpa', true);
   });
 
   test('keeping one side deletes only the relatives on the other side', async ({ page }) => {
     await row(page, 'Dad').click();
+    await page.locator('details').evaluateAll((ds) => ds.forEach((d) => ((d as HTMLDetailsElement).open = true)));
     await page.getByRole('button', { name: /Keep children/ }).click();
     await expect(page.getByText(/Keep only children and delete 1 other person permanently/)).toBeVisible();
     await page.getByRole('button', { name: 'Trim', exact: true }).click();
