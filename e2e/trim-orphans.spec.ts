@@ -79,6 +79,16 @@ test.describe('Trim branch + orphan cleanup', () => {
     await expect(row(page, 'Grandpa')).toBeVisible();
   });
 
+  test('both trim buttons always show; a side with nobody on it is disabled', async ({ page }) => {
+    await row(page, 'Me').click(); // Me has parents (Dad) but no children
+    await page.locator('details').evaluateAll((ds) => ds.forEach((d) => ((d as HTMLDetailsElement).open = true)));
+    await expect(page.getByRole('button', { name: /^Trim ancestors/ })).toBeEnabled();
+    const desc = page.getByRole('button', { name: /^Trim descendants/ });
+    await expect(desc).toBeVisible();
+    await expect(desc).toBeDisabled();
+    await expect(desc).toContainText('no children recorded');
+  });
+
   test('orphan review deletes only the ticked groups', async ({ page }) => {
     await addLoner(page, 'Stray1');
     await addLoner(page, 'Stray2');

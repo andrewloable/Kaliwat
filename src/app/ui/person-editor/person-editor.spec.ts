@@ -129,4 +129,16 @@ describe('PersonEditorComponent large trims', () => {
     expect(button('Download backup')).toBeUndefined();
     expect(button('Trim')).toBeDefined();
   });
+
+  it('always shows both trim buttons; a side with nobody on it is disabled with the reason', () => {
+    const { f } = setup(0); // P has parents, no children
+    f.componentInstance.confirmingTrim.set(null);
+    f.detectChanges();
+    const btn = (side: string) => [...(f.nativeElement as HTMLElement).querySelectorAll('button')].find((b) => b.textContent!.trim().startsWith('Trim ' + side)) as HTMLButtonElement | undefined;
+    expect(btn('ancestors')).toBeDefined();
+    expect(btn('ancestors')!.disabled).toBe(false);
+    expect(btn('descendants')).toBeDefined();
+    expect(btn('descendants')!.disabled).toBe(true);
+    expect(btn('descendants')!.textContent).toContain('no children recorded');
+  });
 });

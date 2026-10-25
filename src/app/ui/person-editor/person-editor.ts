@@ -375,11 +375,12 @@ const BIG_DELETE = 20;
                   <button type="button" class="keep-btn" (click)="confirmingTrim.set(null)">Cancel</button>
                 </div>
               } @else {
-                <span class="confirm-text">Ancestors: parents and up, with siblings and other relatives reached only through them. Descendants: children and down, with the children's partners. This person's own partners stay.</span>
+                <span class="confirm-text">Ancestors: parents and up, with relatives connected only through them. Descendants: children and down, with their partners. Anyone still connected to this person another way stays.</span>
                 <div class="relatives">
                   @for (t of trimOptions(); track t.side) {
-                    <button type="button" class="rel-btn" (click)="confirmingTrim.set(t)">
-                      Trim {{ t.side }} <span class="ci-years">−{{ t.count }}</span>
+                    <button type="button" class="rel-btn" [disabled]="t.count === 0" (click)="confirmingTrim.set(t)">
+                      Trim {{ t.side }}
+                      <span class="ci-years">{{ t.count ? '−' + t.count : (t.side === 'ancestors' ? 'no parents recorded' : 'no children recorded') }}</span>
                     </button>
                   }
                 </div>
@@ -486,7 +487,8 @@ const BIG_DELETE = 20;
       padding: 0.4rem 0.75rem; background: var(--paper-2);
       border: 1px solid var(--line); border-radius: 7px;
       font-size: 0.875rem; color: var(--ink); cursor: pointer;
-      &:hover { border-color: var(--accent); color: var(--accent); }
+      &:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+      &:disabled { opacity: 0.55; cursor: not-allowed; }
     }
     .photo-row { display: flex; align-items: center; gap: 0.875rem; }
     .photo-thumb {
@@ -639,14 +641,13 @@ export class PersonEditorComponent {
   }
 
   // Trim: delete this person's ancestors or descendants side (see trimSet), with how many
-  // people each would delete. A side with nobody to delete is not offered.
+  // people each would delete. Both are always shown; a side with nobody on it is disabled.
   readonly trimOptions = computed(() => {
     const id = this.state();
     if (id === 'closed' || id === 'new') return [];
     const unions = this.store.unions();
     return (['ancestors', 'descendants'] as const)
-      .map((side) => ({ side, count: trimSet(unions, id, side).length }))
-      .filter((t) => t.count > 0);
+      .map((side) => ({ side, count: trimSet(unions, id, side).length }));
   });
   readonly confirmingTrim = signal<{ side: TrimSide; count: number } | null>(null);
   // A trim this big asks for a backup first: the deleted people are gone from this browser for good.

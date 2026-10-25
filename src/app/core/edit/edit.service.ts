@@ -64,31 +64,41 @@ function isObjeFor(node: GedcomNode, file: string): boolean {
 export type TrimSide = 'ancestors' | 'descendants';
 
 /**
- * Who trimming one side of `personId` removes. Ancestors: everyone reached only through
- * their parents' families (parents and up, siblings, aunts and uncles, cousins).
- * Descendants: everyone reached only through their children (children and down, with the
- * children's partners and in-laws); the person's own partners stay. Anyone also related
- * through the kept side stays.
+ * Who trimming one side of `personId` removes. The line itself always goes: ancestors are the
+ * parents and up, descendants the children and down. So does everyone who is no longer connected
+ * to the person once the line is gone (with ancestors: siblings, aunts and uncles, cousins; with
+ * descendants: the children's partners and in-laws). Anyone still connected another way stays,
+ * e.g. the person's own partners, or a niece married to the person's son.
  */
 export function trimSet(unions: Union[], personId: UUID, side: TrimSide): UUID[] {
-  const members = (u: Union) => [...u.spouseIds, ...u.childLinks.map((c) => c.childId)];
   const byPerson = new Map<UUID, Union[]>();
+  const members = (u: Union) => [...u.spouseIds, ...u.childLinks.map((c) => c.childId)];
   for (const u of unions) for (const p of members(u)) byPerson.set(p, [...(byPerson.get(p) ?? []), u]);
 
-  // The links a trim cuts: from the person up into their parents' families, or from their
-  // own families down to the children (whoever enters that family).
-  const linked = (u: Union, from: UUID): UUID[] => {
-    if (side === 'ancestors') return from === personId && !u.spouseIds.includes(personId) ? [] : members(u);
-    return u.spouseIds.includes(personId) ? u.spouseIds : members(u);
-  };
+  // The line: up through the families the person is a child of, or down through the families they head.
+  const line = new Set<UUID>();
+  const up = [personId];
+  while (up.length) {
+    const p = up.pop()!;
+    for (const u of byPerson.get(p) ?? []) {
+      const next = side === 'ancestors'
+        ? (u.childLinks.some((c) => c.childId === p) ? u.spouseIds : [])
+        : (u.spouseIds.includes(p) ? u.childLinks.map((c) => c.childId) : []);
+      for (const q of next) if (q !== personId && !line.has(q)) { line.add(q); up.push(q); }
+    }
+  }
+  if (!line.size) return [];
 
-  const reach = (cut: boolean): Set<UUID> => {
+  // Who stays: everyone still reachable from the person without the line. Trimming ancestors also cuts the
+  // person's own link into their parents' families, so siblings are kept only if connected another way.
+  const reach = (trimmed: boolean): Set<UUID> => {
     const seen = new Set([personId]);
     const queue = [personId];
     while (queue.length) {
       const p = queue.pop()!;
       for (const u of byPerson.get(p) ?? []) {
-        for (const q of cut ? linked(u, p) : members(u)) if (!seen.has(q)) { seen.add(q); queue.push(q); }
+        if (trimmed && side === 'ancestors' && p === personId && !u.spouseIds.includes(personId)) continue;
+        for (const q of members(u)) if (!seen.has(q) && !(trimmed && line.has(q))) { seen.add(q); queue.push(q); }
       }
     }
     return seen;

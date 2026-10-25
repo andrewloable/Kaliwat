@@ -177,10 +177,12 @@ describe('EditService', () => {
       expect(store.unions().find(u => u.id === famOf(d, s))!.childLinks).toEqual([]);
     });
 
-    it('keeps people also related through the kept side (cousin marriage)', () => {
-      service.linkSpouses(x, c); // D's son marries D's niece
-      expect(trimSet(store.unions(), d, 'ancestors')).toEqual([]);
-      expect(trimSet(store.unions(), d, 'descendants')).toEqual([y]);
+    it('always trims the line itself, even when it is also reachable another way (cousin marriage)', () => {
+      service.linkSpouses(x, c); // D's son marries D's niece: D's parents are now also reachable through the niece
+      // The parents go; D's sibling E and her family stay, still connected through X's marriage to C.
+      expect(trimSet(store.unions(), d, 'ancestors').sort()).toEqual([g, h].sort());
+      // The children and grandchildren go, with X's other partner Z; C stays, connected through E.
+      expect(trimSet(store.unions(), d, 'descendants').sort()).toEqual([x, z, w, y].sort());
     });
 
     it('has nothing to trim on a side the person does not have', () => {
