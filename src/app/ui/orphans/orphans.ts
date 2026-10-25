@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { TreeStore } from '../../core/tree-store/tree.store';
 import { EditService, orphanGroups } from '../../core/edit/edit.service';
 
@@ -41,6 +41,7 @@ import { EditService, orphanGroups } from '../../core/edit/edit.service';
       </div>
     }
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .orphan-banner {
       padding: 0.5rem 1.25rem; background: var(--paper-2); border-bottom: 1px solid var(--line);

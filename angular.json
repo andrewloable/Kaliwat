@@ -88,7 +88,10 @@
           "options": {
             "tsConfig": "tsconfig.spec.json",
             "buildTarget": "kaliwat:build:development",
-            "runner": "vitest"
+            "runner": "vitest",
+            "setupFiles": [
+              "src/test-setup.ts"
+            ]
           }
         }
       }

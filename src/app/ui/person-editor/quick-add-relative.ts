@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnDestroy, afterNextRender, computed, inject, input, output, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, OnDestroy, afterNextRender, computed, inject, input, output, signal, viewChild, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TreeStore } from '../../core/tree-store/tree.store';
 import { EditService, validateFact } from '../../core/edit/edit.service';
@@ -94,6 +94,7 @@ type Sex = 'M' | 'F' | 'U';
       <app-photo-crop [file]="f" (done)="onCropped($event)" (cancelled)="cropFile.set(null)" />
     }
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     :host { display: flex; flex-direction: column; gap: 1rem; }
     .panel-title { font-family: var(--font-serif); font-size: 1.375rem; margin: 0; color: var(--ink); }

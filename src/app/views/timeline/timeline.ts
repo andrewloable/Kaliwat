@@ -1,5 +1,5 @@
 import { lifeEventLabel } from '../../core/model/life-events';
-import { Component, input, computed, inject } from '@angular/core';
+import { Component, input, computed, inject, ChangeDetectionStrategy } from '@angular/core';
 import { Individual, Union, UUID } from '../../core/model/types';
 import { TreeStore } from '../../core/tree-store/tree.store';
 
@@ -123,6 +123,7 @@ export function buildTimeline(
       }
     </div>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .timeline-shell { padding: 1rem; }
     .timeline-list {

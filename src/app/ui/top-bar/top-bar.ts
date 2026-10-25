@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { SearchService } from '../../core/search/search.service';
 import { TreeStore } from '../../core/tree-store/tree.store';
@@ -10,6 +10,7 @@ import { ExportMenuComponent } from '../export-menu/export-menu';
   selector: 'app-top-bar',
   imports: [RouterLink, RouterLinkActive, CompareComponent, ExportMenuComponent],
   templateUrl: './top-bar.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './top-bar.scss',
 })
 export class TopBarComponent {

@@ -1,4 +1,4 @@
-import { Component, computed, inject, ViewChild } from '@angular/core';
+import { Component, computed, inject, ViewChild, ChangeDetectionStrategy } from '@angular/core';
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { TreeStore } from '../../core/tree-store/tree.store';
 import { ImportService } from '../../core/import/import.service';
@@ -131,6 +131,7 @@ function toRow(indi: Individual): ListRow {
       <app-person-editor #editor />
     </div>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .list-shell { display: flex; flex-direction: column; height: calc(100vh - 56px - var(--footer-h)); position: relative; }
 

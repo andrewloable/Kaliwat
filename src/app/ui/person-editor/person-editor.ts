@@ -1,4 +1,4 @@
-import { Component, ElementRef, Injector, afterNextRender, computed, inject, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, Injector, afterNextRender, computed, inject, signal, viewChild, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TreeStore } from '../../core/tree-store/tree.store';
 import { EditService, PersonFormData, trimSet, validateFact, FACT_KINDS, FactKind } from '../../core/edit/edit.service';
@@ -400,6 +400,7 @@ function indi2form(indi: Individual): PersonFormData {
       }
     }
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .edit-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.32); z-index: 100; }
     .edit-panel {

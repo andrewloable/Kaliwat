@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { TreeStore } from '../../core/tree-store/tree.store';
 import { fold, matchesTerms } from '../../core/search/search-util';
 import { relationship, traceLayout, TRACE_W, TRACE_H } from '../../core/relate/relate';
@@ -96,6 +96,7 @@ function yearsOf(p: Individual): string {
       </div>
     }
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.32); z-index: 100; }
     .panel {

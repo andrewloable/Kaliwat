@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { ExportService } from '../../export/export.service';
 import type { PageFormat } from '../../export/chart-export';
 
@@ -57,6 +57,7 @@ const LABEL: Record<Kind, string> = { file: 'file', pdf: 'PDF', svg: 'SVG', jpg:
       </div>
     }
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .menu-backdrop { position: fixed; inset: 0; z-index: 90; }
     .menu {

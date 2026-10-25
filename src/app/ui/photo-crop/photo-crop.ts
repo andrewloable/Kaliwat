@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, input, output, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, input, output, signal, ChangeDetectionStrategy } from '@angular/core';
 import {
   CROP_MAX_ZOOM, CROP_OUT, CROP_VIEW, clampOffset, coverScale, cropSource, zoomAt,
 } from './crop-math';
@@ -46,6 +46,7 @@ const QUALITY = 0.85;
       </div>
     </div>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .crop-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 110; }
     .crop-dialog {

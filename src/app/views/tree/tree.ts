@@ -1,6 +1,7 @@
 import {
   Component, ViewChild, ElementRef, AfterViewInit, OnDestroy,
   computed, signal, effect, inject,
+  ChangeDetectionStrategy
 } from '@angular/core';
 import { select } from 'd3-selection';
 import { zoom, ZoomBehavior, zoomIdentity } from 'd3-zoom';
@@ -19,6 +20,7 @@ import { ExportService } from '../../export/export.service';
   selector: 'app-tree-view',
   imports: [PersonEditorComponent],
   templateUrl: './tree.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './tree.scss',
 })
 export class TreeViewComponent implements AfterViewInit, OnDestroy {
