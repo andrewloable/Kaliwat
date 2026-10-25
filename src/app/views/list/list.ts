@@ -1,4 +1,4 @@
-import { Component, computed, inject, ViewChild } from '@angular/core';
+import { Component, computed, inject, ViewChild, ChangeDetectionStrategy } from '@angular/core';
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { TreeStore } from '../../core/tree-store/tree.store';
 import { ImportService } from '../../core/import/import.service';
@@ -6,6 +6,7 @@ import { SearchService } from '../../core/search/search.service';
 import { fold, matchesTerms } from '../../core/search/search-util';
 import { MediaService } from '../../media/media.service';
 import { PersonEditorComponent } from '../../ui/person-editor/person-editor';
+import { OrphansComponent } from '../../ui/orphans/orphans';
 import { Individual } from '../../core/model/types';
 
 export interface ListRow {
@@ -44,7 +45,7 @@ function toRow(indi: Individual): ListRow {
 
 @Component({
   selector: 'app-list',
-  imports: [ScrollingModule, PersonEditorComponent],
+  imports: [ScrollingModule, PersonEditorComponent, OrphansComponent],
   template: `
     <div class="list-shell">
       @if (store.importStatus().kind === 'importing') {
@@ -60,6 +61,8 @@ function toRow(indi: Individual): ListRow {
           </div>
         }
       }
+
+      <app-orphans />
 
       @if (store.isEmpty()) {
         <div class="empty-state">
@@ -111,6 +114,10 @@ function toRow(indi: Individual): ListRow {
                 <span class="row-hint">{{ row.subtitle }}</span>
               }
             </div>
+            @let gen = store.generations().get(row.id);
+            @if (gen) {
+              <span class="row-gen" [attr.aria-label]="'Generation ' + gen">Gen {{ gen }}</span>
+            }
             <span class="row-years" aria-label="Born {{ row.birthYear }} died {{ row.deathYear }}">
               {{ row.birthYear }}<span class="year-sep">–</span>{{ row.deathYear }}
             </span>
@@ -124,10 +131,11 @@ function toRow(indi: Individual): ListRow {
       <app-person-editor #editor />
     </div>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
-    .list-shell { display: flex; flex-direction: column; height: calc(100vh - 56px); position: relative; }
+    .list-shell { display: flex; flex-direction: column; height: calc(100vh - 56px - var(--footer-h)); position: relative; }
 
-    .scroll-viewport { flex: 1; height: calc(100vh - 56px); }
+    .scroll-viewport { flex: 1; height: calc(100vh - 56px - var(--footer-h)); }
 
     .importing-state {
       padding: 0.5rem 1.25rem;
@@ -178,6 +186,10 @@ function toRow(indi: Individual): ListRow {
     }
 
     .row-hint { font-size: 0.875rem; color: var(--ink-soft); }
+    .row-gen {
+      font-size: 0.75rem; color: var(--ink-soft); background: var(--paper-2);
+      border-radius: 999px; padding: 0.1rem 0.55rem; white-space: nowrap; font-variant-numeric: tabular-nums;
+    }
 
     .row-years {
       flex-shrink: 0;
@@ -189,7 +201,7 @@ function toRow(indi: Individual): ListRow {
     /* Empty state / drop zone */
     .empty-state {
       display: flex; align-items: center; justify-content: center;
-      height: calc(100vh - 56px);
+      height: calc(100vh - 56px - var(--footer-h));
     }
     .drop-zone {
       display: flex; flex-direction: column; align-items: center; gap: 0.75rem;
@@ -233,7 +245,7 @@ function toRow(indi: Individual): ListRow {
 
     /* Add person FAB */
     .add-person-btn {
-      position: fixed; bottom: 1.5rem; right: 1.5rem;
+      position: fixed; bottom: calc(1.5rem + var(--footer-h)); right: 1.5rem;
       width: 52px; height: 52px; border-radius: 50%;
       background: var(--accent); color: #fff; border: none;
       font-size: 1.75rem; line-height: 1; cursor: pointer;

@@ -96,16 +96,8 @@
   }
 }
 
-/* Narrow screens: tighten the bar and let the search field shrink fully so
-   the row never overflows (DESIGN.md: no horizontal scroll on mobile). */
-@media (max-width: 480px) {
-  .top-bar {
-    padding: 0 0.75rem;
-    gap: 0.5rem;
-  }
-  .search-slot {
-    min-width: 0;
-  }
+.btn-icon {
+  display: none;
 }
 
 .export-btn {
@@ -148,5 +140,33 @@
   &:focus-visible {
     outline: 3px solid var(--focus);
     outline-offset: 2px;
+  }
+}
+
+/* Narrow screens: tighten the bar and let the search field shrink fully so
+   the row never overflows (DESIGN.md: no horizontal scroll on mobile). */
+@media (max-width: 480px) {
+  .top-bar {
+    padding: 0 0.75rem;
+    gap: 0.5rem;
+  }
+  .search-slot {
+    min-width: 0;
+  }
+  // The footer carries the name on phones; the room goes to the tool buttons.
+  .wordmark {
+    display: none;
+  }
+  .tab,
+  .export-btn,
+  .import-btn {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+  // Compare / Export collapse to 44px icon buttons (names kept via aria-label).
+  .export-btn {
+    min-width: 44px;
+    .btn-text { display: none; }
+    .btn-icon { display: inline; }
   }
 }

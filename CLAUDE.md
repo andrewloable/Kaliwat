@@ -6,9 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Never commit or push automatically. Only commit or push when the user explicitly asks.
 
+## Deploy
+
+Production (https://kaliwat.loable.tech) is the Cloudflare Pages project `kaliwat`. It has no git integration: it is updated by a manual upload, **not** by `git push`. The GitHub Actions workflow (`.github/workflows/deploy.yml`) only runs the tests and publishes a `/Kaliwat/` build to the `gh-pages` branch; GitHub Pages is not enabled, so that output is not served anywhere and production is not touched.
+
+```bash
+npx ng build   # default base href "/" — do NOT pass --base-href=/Kaliwat/ (that is the gh-pages build)
+wrangler pages deploy dist/kaliwat/browser --project-name kaliwat --branch main \
+  --commit-hash "$(git rev-parse HEAD)" --commit-message "v<version>"
+```
+
+Verify: `curl -s https://kaliwat.loable.tech/ | grep -o 'main-[A-Za-z0-9]*\.js'` should match `ls dist/kaliwat/browser | grep main-`, and the page footer shows `Kaliwat v<version>`. `public/_redirects` (single-page-app fallback) is copied into the build.
+
+A deploy changes production: only run it when the user asks for it explicitly. Build from a clean, pushed commit so the deployment's commit hash is meaningful.
+
 ## Status
 
-**Scaffolded, no features yet.** Angular 20 standalone app is in place (`ng serve`/`ng build` via the Vite/esbuild `application` builder). Unit tests run on **Vitest** (`npm test`, via `@angular/build:unit-test` — Karma was removed); e2e on **Playwright** (`npm run e2e`, config in `playwright.config.ts`, specs in `e2e/`). Planned source layout exists empty under `src/app/{core,gedcom,media,layout,views,ui}` with `test/fixtures/`. `docs/family-tree-app-plan.md` is the source of truth for scope, data model, and milestone order — read it before starting. This file summarizes the architecture so you don't have to re-derive it each session.
+**Scaffolded, no features yet.** Angular 22 standalone app is in place (`ng serve`/`ng build` via the Vite/esbuild `application` builder). Unit tests run on **Vitest** (`npm test`, via `@angular/build:unit-test` — Karma was removed); e2e on **Playwright** (`npm run e2e`, config in `playwright.config.ts`, specs in `e2e/`). Planned source layout exists empty under `src/app/{core,gedcom,media,layout,views,ui}` with `test/fixtures/`. `docs/family-tree-app-plan.md` is the source of truth for scope, data model, and milestone order — read it before starting. This file summarizes the architecture so you don't have to re-derive it each session.
 
 ## What this is
 

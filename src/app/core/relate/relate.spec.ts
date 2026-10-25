@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { relationship } from './relate';
+import { relationship, generations, traceLayout } from './relate';
 import { Individual, Union, UUID } from '../model/types';
 
 function mkI(id: UUID): Individual {
@@ -98,7 +98,38 @@ describe('relationship()', () => {
   it('2nd cousin', () => expect(rel('ME', 'SECOND_COUSIN')).toBe('2nd cousin'));
 
   it('spouse', () => expect(rel('ME', 'SPOUSE')).toBe('spouse'));
-  it('in-law (parent of spouse)', () => expect(rel('P1', 'SPOUSE')).toBe('in-law'));
+  it('child-in-law (spouse of a child)', () => expect(rel('P1', 'SPOUSE')).toBe('child-in-law'));
+  it('parent-in-law (parent of a spouse)', () => expect(rel('SPOUSE', 'P1')).toBe('parent-in-law'));
+  it('sibling-in-law both ways', () => {
+    expect(rel('SIB', 'SPOUSE')).toBe('sibling-in-law');
+    expect(rel('SPOUSE', 'SIB')).toBe('sibling-in-law');
+  });
+  it('an aunt/uncle\'s spouse is an aunt/uncle by marriage', () => {
+    const people = new Map(['ME', 'DAD', 'UNC', 'AUNT', 'GP'].map(id => [id, mkI(id)] as const));
+    const fams = new Map([
+      ['F1', mkU('F1', ['GP'], ['DAD', 'UNC'])], ['F2', mkU('F2', ['DAD'], ['ME'])], ['F3', mkU('F3', ['UNC', 'AUNT'], [])],
+    ]);
+    expect(relationship('ME', 'AUNT', people, fams).term).toBe('aunt/uncle by marriage');
+  });
+
+  it('other in-laws are described through the spouse', () => {
+    expect(rel('COUSIN', 'SPOUSE')).toBe("1st cousin's spouse");
+    expect(relationship('COUSIN', 'SPOUSE', indis, unions).path).toEqual(['COUSIN', 'UNCLE', 'GP1', 'P1', 'ME', 'SPOUSE']);
+  });
+
+  it('related by marriage further out, with the linking path', () => {
+    // A+B → C;  C+D;  E → D  (E is D's parent: A and E are co-parents-in-law)
+    const people = new Map(['A', 'B', 'C', 'D', 'E'].map(id => [id, mkI(id)] as const));
+    const fams = new Map([
+      ['F1', mkU('F1', ['A', 'B'], ['C'])], ['F2', mkU('F2', ['C', 'D'], [])], ['F3', mkU('F3', ['E'], ['D'])],
+    ]);
+    expect(relationship('A', 'E', people, fams)).toEqual({ term: 'related by marriage', path: ['A', 'C', 'D', 'E'] });
+  });
+
+  it('names the nearest common ancestor for blood relatives only', () => {
+    expect(relationship('ME', 'COUSIN', indis, unions).lca).toBe('GP1');
+    expect(relationship('P1', 'SPOUSE', indis, unions)).not.toHaveProperty('lca');
+  });
 
   it('not connected', () => expect(rel('ME', 'UNRELATED')).toBe('not connected'));
 
@@ -111,5 +142,65 @@ describe('relationship()', () => {
   it('path is empty for not-connected', () => {
     const r = relationship('ME', 'UNRELATED', indis, unions);
     expect(r.path).toHaveLength(0);
+  });
+});
+
+describe('generations()', () => {
+  // GF+GM → DAD;  DAD+MOM (married in, no parents) → ME, SIS;  ME+WIFE → KID;  LONE alone
+  const ids = ['GF', 'GM', 'DAD', 'MOM', 'ME', 'SIS', 'WIFE', 'KID', 'LONE'];
+  const unions = [
+    mkU('U1', ['GF', 'GM'], ['DAD']),
+    mkU('U2', ['DAD', 'MOM'], ['ME', 'SIS']),
+    mkU('U3', ['ME', 'WIFE'], ['KID']),
+  ];
+
+  it('numbers generations from the oldest known one, partners sharing a number', () => {
+    const g = generations(ids.map(mkI), unions);
+    expect(ids.map(id => g.get(id))).toEqual([1, 1, 2, 2, 3, 3, 3, 4, 1]);
+  });
+
+  it('gives the same answer whoever is listed first', () => {
+    const g = generations([...ids].reverse().map(mkI), unions);
+    expect(g.get('GF')).toBe(1);
+    expect(g.get('KID')).toBe(4);
+    expect(g.get('WIFE')).toBe(3);
+  });
+
+  it('puts siblings in a parentless family on the same generation', () => {
+    const g = generations(['A', 'B'].map(mkI), [mkU('U', [], ['A', 'B'])]);
+    expect([g.get('A'), g.get('B')]).toEqual([1, 1]);
+  });
+});
+
+describe('traceLayout()', () => {
+  const all = [...unions.values()];
+  const at = (t: ReturnType<typeof traceLayout>, id: string) => t.cards.find(c => c.id === id)!;
+
+  it('hangs 1st cousins from their grandparent couple', () => {
+    const t = traceLayout(relationship('ME', 'COUSIN', indis, unions).path, all);
+    expect(t.cards.map(c => c.id).sort()).toEqual(['COUSIN', 'GP1', 'GP2', 'ME', 'P1', 'UNCLE']);
+    expect(at(t, 'GP2').partner).toBe(true);
+    expect([at(t, 'GP1').y, at(t, 'GP2').y]).toEqual([0, 0]);
+    expect(at(t, 'ME').x).toBe(at(t, 'GP1').x);       // A's line under one grandparent
+    expect(at(t, 'COUSIN').x).toBe(at(t, 'GP2').x);   // B's line under the other
+    expect(at(t, 'P1').y).toBe(at(t, 'UNCLE').y);
+    expect(at(t, 'ME').y).toBeGreaterThan(at(t, 'P1').y);
+    expect(t.links.filter(l => l.spouse)).toHaveLength(1);
+  });
+
+  it('centres a lone shared parent over half-siblings', () => {
+    const t = traceLayout(['ME', 'P1', 'HALF_SIB'], all);
+    expect(t.cards).toHaveLength(3);
+    expect(at(t, 'P1').x).toBe((at(t, 'ME').x + at(t, 'HALF_SIB').x) / 2);
+  });
+
+  it('draws a straight line for direct ancestors and a side link for spouses', () => {
+    const line = traceLayout(['ME', 'P1', 'GP1'], all);
+    expect(new Set(line.cards.map(c => c.x)).size).toBe(1);
+    expect(at(line, 'GP1').y).toBe(0);
+    const pair = traceLayout(['ME', 'SPOUSE'], all);
+    expect(at(pair, 'SPOUSE').y).toBe(at(pair, 'ME').y);
+    expect(at(pair, 'SPOUSE').x).toBeGreaterThan(at(pair, 'ME').x);
+    expect(pair.links).toEqual([expect.objectContaining({ spouse: true })]);
   });
 });

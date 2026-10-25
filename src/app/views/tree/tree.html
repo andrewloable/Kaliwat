@@ -1,27 +1,24 @@
 <div class="tree-container">
   <div class="tree-toolbar">
     @if (!store.isEmpty()) {
-      <button class="mode-btn" [class.active]="mode() === 'pedigree'" (click)="mode.set('pedigree')">Ancestors</button>
-      <button class="mode-btn" [class.active]="mode() === 'descendants'" (click)="mode.set('descendants')">Descendants</button>
-      <button class="mode-btn" [class.active]="mode() === 'family'" (click)="mode.set('family')">Family</button>
-      <button class="mode-btn" [class.active]="mode() === 'complete'" (click)="mode.set('complete')">Full tree</button>
+      <button class="mode-btn orient-btn" [class.active]="familyOrientation() === 'horizontal'"
+        [attr.aria-pressed]="familyOrientation() === 'horizontal'" (click)="familyOrientation.set('horizontal')">→ Left to right</button>
+      <button class="mode-btn orient-btn" [class.active]="familyOrientation() === 'vertical'"
+        [attr.aria-pressed]="familyOrientation() === 'vertical'" (click)="familyOrientation.set('vertical')">↓ Top to bottom</button>
+      <button class="mode-btn orient-btn" [class.active]="familyOrientation() === 'compact'"
+        [attr.aria-pressed]="familyOrientation() === 'compact'" (click)="familyOrientation.set('compact')"
+        title="Top-to-bottom generations, then a waterfall of descendants">▦ Compact</button>
+      @if (familyOrientation() === 'compact') {
+        <label class="rows-setting">Rows
+          <select aria-label="Generations top to bottom" (change)="compactRows.set(+$any($event.target).value)">
+            @for (n of [1, 2, 3, 4, 5, 6]; track n) {
+              <option [value]="n" [selected]="n === compactRows()">{{ n }}</option>
+            }
+          </select>
+        </label>
+      }
     }
     <button class="recenter-btn" title="Recenter" (click)="recenter()">⊙ Recenter</button>
-    @if (!store.isEmpty()) {
-      <select class="pdf-size" aria-label="PDF page size" title="PDF page size"
-        [value]="pdfSize()" (change)="pdfSize.set($any($event.target).value)">
-        <option value="a4">A4</option>
-        <option value="a3">A3</option>
-        <option value="a2">A2</option>
-        <option value="letter">Letter</option>
-        <option value="legal">Legal</option>
-        <option value="tabloid">Tabloid</option>
-      </select>
-      <button class="pdf-btn" title="Export current tree to PDF"
-        [disabled]="exporting()" (click)="exportPdf()">
-        {{ exporting() ? 'Exporting…' : '⤓ PDF' }}
-      </button>
-    }
   </div>
 
   @if (search.query().trim()) {
@@ -45,19 +42,25 @@
 
   <svg #svgEl class="tree-svg" aria-label="Family tree diagram">
     <g #chartLayer>
-      @if (mode() !== 'family') {
         @for (edge of layout().edges; track edge.id) {
           <path class="tree-edge" [attr.d]="edgePath(edge)"
-            fill="none" stroke="var(--line)" stroke-width="1.5"/>
+            fill="none" stroke="var(--ink-soft)" stroke-width="1.6"/>
+          @if (edge.spouse) {
+            <circle class="union-node" [attr.cx]="(edge.x1 + edge.x2) / 2" [attr.cy]="(edge.y1 + edge.y2) / 2" r="11"
+              fill="var(--paper-2)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text [attr.x]="(edge.x1 + edge.x2) / 2" [attr.y]="(edge.y1 + edge.y2) / 2"
+              text-anchor="middle" dominant-baseline="central"
+              font-size="12" fill="var(--accent)" aria-hidden="true">⚭</text>
+          }
         }
         @for (node of layout().nodes; track node.id) {
           <g class="card-node" [class.focus-node]="node.isFocus"
              [attr.transform]="'translate(' + node.x + ',' + node.y + ')'"
              role="button" tabindex="0"
              [attr.aria-label]="displayName(node.person)"
-             (click)="setFocus(node.id)"
-             (keydown.enter)="setFocus(node.id)"
-             (keydown.space)="setFocus(node.id)">
+             (click)="onCardChosen(node.person.id)"
+             (keydown.enter)="onCardChosen(node.person.id)"
+             (keydown.space)="onCardChosen(node.person.id)">
             <rect [attr.width]="CARD_W" [attr.height]="CARD_H" rx="8"
               fill="var(--card)"
               [attr.stroke]="node.isFocus ? 'var(--accent)' : 'var(--line)'"
@@ -84,6 +87,12 @@
             <text x="64" [attr.y]="pLines.length > 1 ? 60 : 50"
               font-family="'Avenir Next','Segoe UI',Helvetica,Arial,sans-serif"
               font-size="12" fill="var(--ink-soft)">{{years(node.person)}}</text>
+            @let pGen = store.generations().get(node.person.id);
+            @if (pGen) {
+              <text [attr.x]="CARD_W - 10" [attr.y]="CARD_H - 10" text-anchor="end"
+                font-family="'Avenir Next','Segoe UI',Helvetica,Arial,sans-serif"
+                font-size="11" fill="var(--ink-soft)">Gen {{ pGen }}</text>
+            }
             <g class="card-edit" role="button" tabindex="0"
                [attr.aria-label]="'Edit ' + displayName(node.person)"
                (click)="editor.open(node.person.id); $event.stopPropagation()"
@@ -98,76 +107,6 @@
             font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif"
             font-size="18" fill="var(--ink-soft)">Import a tree from the List view to see the family tree.</text>
         }
-      } @else {
-        <!-- Family / DAG mode: union nodes + person cards -->
-        @for (edge of dagLayout().edges; track edge.id) {
-          <path class="tree-edge" [attr.d]="dagEdgePath(edge)"
-            fill="none" stroke="var(--line)" stroke-width="1.5"/>
-        }
-        @for (node of personNodes(dagLayout().nodes); track node.id) {
-          <g class="card-node" [class.focus-node]="node.isFocus"
-             [attr.transform]="'translate(' + node.x + ',' + node.y + ')'"
-             role="button" tabindex="0"
-             [attr.aria-label]="displayName(node.person!)"
-             (click)="setFocus(node.person!.id)"
-             (keydown.enter)="setFocus(node.person!.id)"
-             (keydown.space)="setFocus(node.person!.id)">
-            <rect [attr.width]="CARD_W" [attr.height]="CARD_H" rx="8"
-              fill="var(--card)"
-              [attr.stroke]="node.isFocus ? 'var(--accent)' : 'var(--line)'"
-              [attr.stroke-width]="node.isFocus ? 2 : 1"/>
-            @let fPhoto = media.avatar(store.currentTreeId(), node.person!.mediaIds[0])();
-            @if (fPhoto) {
-              <clipPath [attr.id]="'av-' + node.id"><circle cx="33" cy="43" r="21"/></clipPath>
-              <image [attr.href]="fPhoto" x="12" y="22" width="42" height="42"
-                [attr.clip-path]="'url(#av-' + node.id + ')'" preserveAspectRatio="xMidYMid slice"/>
-            } @else {
-              <circle cx="33" cy="43" r="21" fill="var(--paper-2)"/>
-              <text x="33" y="43" text-anchor="middle" dominant-baseline="central"
-                font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif"
-                font-size="13" fill="var(--ink-soft)">{{initials(node.person!)}}</text>
-            }
-            @let fLines = nameLines(node.person!);
-            <text [attr.y]="fLines.length > 1 ? 23 : 33"
-              font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif"
-              font-size="14" fill="var(--ink)">
-              @for (ln of fLines; track $index) {
-                <tspan x="64" [attr.dy]="$index === 0 ? 0 : 15">{{ ln }}</tspan>
-              }
-            </text>
-            <text x="64" [attr.y]="fLines.length > 1 ? 60 : 50"
-              font-family="'Avenir Next','Segoe UI',Helvetica,Arial,sans-serif"
-              font-size="12" fill="var(--ink-soft)">{{years(node.person!)}}</text>
-            <g class="card-edit" role="button" tabindex="0"
-               [attr.aria-label]="'Edit ' + displayName(node.person!)"
-               (click)="editor.open(node.person!.id); $event.stopPropagation()"
-               (keydown.enter)="editor.open(node.person!.id); $event.stopPropagation()">
-              <rect [attr.x]="CARD_W - 32" y="6" width="26" height="20" rx="6" fill="var(--paper-2)"/>
-              <text [attr.x]="CARD_W - 19" y="20" text-anchor="middle" font-size="12" fill="var(--ink-soft)">✎</text>
-            </g>
-          </g>
-        }
-        @for (node of unionNodes(dagLayout().nodes); track node.id) {
-          <!-- Union node: accent-ringed circle with ⚭ symbol -->
-          <circle class="union-node"
-            [attr.cx]="node.x" [attr.cy]="node.y" [attr.r]="UNION_R"
-            fill="var(--paper-2)" stroke="var(--accent)" stroke-width="2"/>
-          <text [attr.x]="node.x" [attr.y]="node.y"
-            text-anchor="middle" dominant-baseline="central"
-            font-size="13" fill="var(--accent)" aria-hidden="true">⚭</text>
-          @if (unionYear(node)) {
-            <text [attr.x]="node.x" [attr.y]="node.y + UNION_R + 11"
-              text-anchor="middle"
-              font-family="'Avenir Next','Segoe UI',Helvetica,Arial,sans-serif"
-              font-size="11" fill="var(--ink-soft)" aria-hidden="true">{{ unionYear(node) }}</text>
-          }
-        }
-        @if (dagLayout().nodes.length === 0) {
-          <text x="40" y="60"
-            font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif"
-            font-size="18" fill="var(--ink-soft)">Import a tree from the List view to see the family tree.</text>
-        }
-      }
     </g>
   </svg>
 

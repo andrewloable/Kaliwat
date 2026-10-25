@@ -66,12 +66,8 @@ test.describe('Tree UI + GEDZIP photos', () => {
     expect(transform).toContain('translate(40,40)');
   });
 
-  test('family mode renders without crashing; union nodes for spouses', async ({ page }) => {
+  test('full tree renders without crashing; union nodes for spouses', async ({ page }) => {
     await importAndGoToTree(page);
-
-    // Switch to family mode
-    await page.locator('.mode-btn').filter({ hasText: 'Family' }).click();
-    await page.waitForTimeout(300);
 
     // Family view must not crash — cards are still present
     await expect(page.locator('.card-node').first()).toBeVisible({ timeout: 5_000 });
@@ -98,10 +94,12 @@ test.describe('Tree UI + GEDZIP photos', () => {
     await expect(initial).toHaveCount(1);
 
     // Click a non-focus card (if any are visible)
-    const allCards = page.locator('.card-node');
-    const count = await allCards.count();
-    if (count > 1) {
-      await allCards.nth(1).click();
+    // a card that is on screen (the Full tree may place others off-screen)
+    const onScreen = await page.evaluate(() => [...document.querySelectorAll('.card-node')]
+      .map((el, i) => ({ i, r: el.getBoundingClientRect() }))
+      .find(({ i, r }) => i > 0 && r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight)?.i ?? -1);
+    if (onScreen > 0) {
+      await page.locator('.card-node').nth(onScreen).click();
       await page.waitForTimeout(200);
       // Focus highlight may have moved
       const afterClick = page.locator('.card-node.focus-node');
@@ -128,10 +126,7 @@ test.describe('Tree UI + GEDZIP photos', () => {
 
     await importAndGoToTree(page);
 
-    // Switch through modes (exercises all rendering paths)
-    await page.locator('.mode-btn').filter({ hasText: 'Descendants' }).click();
-    await page.waitForTimeout(300);
-    await page.locator('.mode-btn').filter({ hasText: 'Family' }).click();
+    // Let the Full tree render fully before checking for external requests
     await page.waitForTimeout(300);
 
     expect(

@@ -105,7 +105,9 @@ export class ImportService {
         },
       );
 
-      await this.persistence.requestPersistence();
+      // Not awaited: Firefox leaves persist() pending until the user answers its prompt,
+      // which would hang the import on "Importing…".
+      void this.persistence.requestPersistence().catch(() => undefined);
 
       const warnings = [
         ...parseResult.report.map(r => r.message),

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TreeStore } from '../tree-store/tree.store';
-import { EditService, PersonFormData } from './edit.service';
+import { EditService, PersonFormData, trimSet, orphanGroups } from './edit.service';
 import { PersistenceService } from '../db/persistence.service';
 import { TestBed } from '@angular/core/testing';
 
@@ -132,6 +132,79 @@ describe('EditService', () => {
 
     expect(store.unions()).toHaveLength(0);
     expect(store.individuals().find(i => i.id === a)?.unions).toHaveLength(0);
+  });
+
+  describe('trimToSide', () => {
+    // G+H → (D, E);  E+A → C;  P+Q → M;  D+M → X;  D+S → Y (second marriage)
+    let g: string, h: string, d: string, e: string, a: string, c: string;
+    let p: string, q: string, m: string, x: string, s: string, y: string;
+    const famOf = (one: string, two: string) =>
+      store.unions().find(u => u.spouseIds.includes(one) && u.spouseIds.includes(two))!.id;
+    const parentsOf = (kid: string) => store.unions().find(u => u.childLinks.some(l => l.childId === kid))!.id;
+    const ids = () => store.individuals().map(i => i.id).sort();
+
+    beforeEach(() => {
+      [g, h, d, e, a, c, p, q, m, x, s, y] = ['G', 'H', 'D', 'E', 'A', 'C', 'P', 'Q', 'M', 'X', 'S', 'Y']
+        .map(n => service.createIndividual(baseForm({ given: n })));
+      service.linkSpouses(g, h);
+      service.addParentChild(g, d);
+      service.addParentChild(g, e);
+      service.linkSpouses(e, a);
+      service.addParentChild(e, c);
+      service.linkSpouses(p, q);
+      service.addParentChild(p, m);
+      service.linkSpouses(d, m);
+      service.addParentChild(d, x);
+      service.linkSpouses(d, s);
+      store.upsertUnion({ ...store.unions().find(u => u.id === famOf(d, s))!, childLinks: [{ childId: y, citations: [], notes: [] }] });
+    });
+
+    it('keeping the family with a wife drops parents, siblings and other marriages, keeps her relatives', () => {
+      const removed = service.trimToSide(d, famOf(d, m));
+      expect(removed).toBe(7);
+      expect(ids()).toEqual([d, m, x, p, q].sort());
+      expect(store.unions().map(u => u.id).sort()).toEqual([famOf(d, m), famOf(p, q)].sort());
+      expect(store.individuals().find(i => i.id === d)!.unions.map(r => r.unionId)).toEqual([famOf(d, m)]);
+    });
+
+    it('keeping the parents side drops every marriage and its relatives', () => {
+      service.trimToSide(d, parentsOf(d));
+      expect(ids()).toEqual([g, h, d, e, a, c].sort());
+      expect(store.individuals().find(i => i.id === d)!.unions).toHaveLength(0);
+    });
+
+    it('keeps people also related through the kept side (cousin marriage)', () => {
+      service.linkSpouses(x, c);
+      expect(trimSet(store.unions(), d, famOf(d, m)).sort()).toEqual([s, y].sort());
+    });
+  });
+
+  describe('orphanGroups / deletePeople', () => {
+    it('lists everything outside the largest connected group, largest first', () => {
+      const [dad, mom, kid, lone, x, y] = ['Dad', 'Mom', 'Kid', 'Lone', 'X', 'Y']
+        .map(n => service.createIndividual(baseForm({ given: n })));
+      service.linkSpouses(dad, mom);
+      service.addParentChild(dad, kid);
+      service.linkSpouses(x, y);
+
+      const groups = orphanGroups(store.individuals(), store.unions());
+      expect(groups.map(g => [...g].sort())).toEqual([[x, y].sort(), [lone]]);
+    });
+
+    it('is empty when everyone is connected', () => {
+      const a = service.createIndividual(baseForm({ given: 'A' }));
+      service.addChild(a);
+      expect(orphanGroups(store.individuals(), store.unions())).toEqual([]);
+    });
+
+    it('deletePeople removes only the chosen people and their now-empty unions', () => {
+      const [dad, mom, x, y] = ['Dad', 'Mom', 'X', 'Y'].map(n => service.createIndividual(baseForm({ given: n })));
+      service.linkSpouses(dad, mom);
+      service.linkSpouses(x, y);
+      service.deletePeople([x, y]);
+      expect(store.individuals().map(i => i.id).sort()).toEqual([dad, mom].sort());
+      expect(store.unions()).toHaveLength(1);
+    });
   });
 
   it('addChild creates a blank child attached to the parent', () => {

@@ -34,11 +34,14 @@ function parseEvent(node: GedcomNode): GedcomEvent {
     place: childValue(node, 'PLAC'),
     citations: childNodes(node, 'SOUR').map((s) => s.pointer ?? s.value ?? ''),
     notes: childNodes(node, 'NOTE').map((n) => n.value ?? ''),
+    ...(DESCRIBED_TAGS.has(node.tag) && node.value ? { description: node.value } : {}),
     raw: node,
   };
 }
 
-const EVENT_TAGS = new Set(['BIRT', 'DEAT', 'BURI', 'BAPM', 'CHR', 'CHRA', 'CONF', 'FCOM', 'ORDN', 'NATU', 'EMIG', 'IMMI', 'CENS', 'PROB', 'WILL', 'GRAD', 'RETI', 'EVEN', 'ADOP']);
+const EVENT_TAGS = new Set(['BIRT', 'DEAT', 'BURI', 'CREM', 'BAPM', 'CHR', 'CHRA', 'CONF', 'FCOM', 'ORDN', 'NATU', 'EMIG', 'IMMI', 'CENS', 'PROB', 'WILL', 'GRAD', 'RETI', 'EVEN', 'ADOP', 'OCCU', 'EDUC', 'RESI']);
+// Records whose own value is meaningful text (not the usual "Y" flag)
+const DESCRIBED_TAGS = new Set(['OCCU', 'EDUC', 'RESI', 'EVEN']);
 
 function parseName(node: GedcomNode): PersonName {
   const raw = node.value ?? '';

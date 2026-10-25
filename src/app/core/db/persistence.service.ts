@@ -110,8 +110,10 @@ export class PersistenceService implements OnDestroy {
     await this._db.mediaMeta.bulkPut(media.map((data) => ({ treeId, id: data.id, data })));
   }
 
-  async saveTree(treeId: string, meta: Record<string, unknown> = {}): Promise<void> {
-    await this._db.trees.put({ id: treeId, meta, updatedAt: Date.now() });
+  // Without new meta the stored meta is kept: an edit must not erase what the import recorded.
+  async saveTree(treeId: string, meta?: Record<string, unknown>): Promise<void> {
+    const kept = meta ?? (await this._db.trees.get(treeId))?.meta ?? {};
+    await this._db.trees.put({ id: treeId, meta: kept, updatedAt: Date.now() });
   }
 
   async loadLatestTreeId(): Promise<string | null> {

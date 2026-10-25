@@ -1,26 +1,26 @@
 import {
   Component, ViewChild, ElementRef, AfterViewInit, OnDestroy,
   computed, signal, effect, inject,
+  ChangeDetectionStrategy
 } from '@angular/core';
 import { select } from 'd3-selection';
 import { zoom, ZoomBehavior, zoomIdentity } from 'd3-zoom';
 import { TreeStore } from '../../core/tree-store/tree.store';
-import { buildLayout, buildCompleteLayout, CARD_W, CARD_H, LayoutNode, LayoutEdge } from '../../layout/pedigree-layout';
-import { buildDagLayout, DagNode, DagEdge } from '../../layout/dag-layout';
+import { buildCompleteLayout, CARD_W, CARD_H, LayoutNode, LayoutEdge } from '../../layout/pedigree-layout';
 import { Individual } from '../../core/model/types';
 import { MediaService } from '../../media/media.service';
 import { SearchService } from '../../core/search/search.service';
 import { fold, matchesTerms } from '../../core/search/search-util';
 import { PersonEditorComponent } from '../../ui/person-editor/person-editor';
 import { wrapToLines } from './wrap-text';
-import { exportTreePdf, PageFormat } from './pdf-export';
+import { ExportService } from '../../export/export.service';
 
-export const UNION_R = 14; // union dot radius — keep in sync with dag-layout.ts
 
 @Component({
   selector: 'app-tree-view',
   imports: [PersonEditorComponent],
   templateUrl: './tree.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './tree.scss',
 })
 export class TreeViewComponent implements AfterViewInit, OnDestroy {
@@ -30,8 +30,8 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
   protected readonly store = inject(TreeStore);
   protected readonly media = inject(MediaService);
   protected readonly search = inject(SearchService);
+  private readonly exportService = inject(ExportService);
 
-  readonly mode = signal<'pedigree' | 'descendants' | 'family' | 'complete'>('pedigree');
   readonly focusId = signal<string | null>(null);
 
   // Search in tree mode is a "jump to person": matches surface in a dropdown,
@@ -51,10 +51,16 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
     this.centerOnFocus();
   }
 
+  /** A card chosen in the drawing: focus that person and centre the view on them. */
+  onCardChosen(id: string): void {
+    this.setFocus(id);
+    this.centerOnFocus();
+  }
+
   /** Pan (at current scale) so the focused person sits in the viewport centre. */
   private centerOnFocus(): void {
     if (!this.svgEl || !this.zoomBehavior) return;
-    const nodes = this.mode() === 'family' ? this.dagLayout().nodes : this.layout().nodes;
+    const nodes = this.layout().nodes;
     const focus = nodes.find((n) => n.isFocus);
     if (!focus) { this.recenter(); return; }
     const svg = this.svgEl.nativeElement;
@@ -87,23 +93,17 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
     if (!focusId || individuals.length === 0) return { nodes: [] as LayoutNode[], edges: [] as LayoutEdge[] };
     const iMap = new Map(individuals.map(i => [i.id, i]));
     const uMap = new Map(unions.map(u => [u.id, u]));
-    const mode = this.mode();
-    if (mode === 'family') return { nodes: [], edges: [] }; // handled by dagLayout
-    if (mode === 'complete') return buildCompleteLayout(focusId, iMap, uMap);
-    return buildLayout(focusId, mode, iMap, uMap);
+    const orientation = this.familyOrientation();
+    const vertical = orientation === 'vertical';
+    const compact = orientation === 'compact' ? this.compactRows() : false;
+    return buildCompleteLayout(focusId, iMap, uMap, undefined, vertical, compact);
   });
 
-  readonly dagLayout = computed(() => {
-    const focusId = this.focusId();
-    const individuals = this.store.individuals();
-    const unions = this.store.unions();
-    if (this.mode() !== 'family' || !focusId || individuals.length === 0) {
-      return { nodes: [] as DagNode[], edges: [] as DagEdge[] };
-    }
-    const iMap = new Map(individuals.map(i => [i.id, i]));
-    const uMap = new Map(unions.map(u => [u.id, u]));
-    return buildDagLayout(focusId, iMap, uMap);
-  });
+  /** Family view direction: generations left→right (default) or top→bottom. */
+  readonly familyOrientation = signal<'horizontal' | 'vertical' | 'compact'>('horizontal');
+  /** Compact view: how many generations run top to bottom before the cascade starts. */
+  readonly compactRows = signal(4);
+
 
   ngAfterViewInit(): void {
     const svgNative = this.svgEl.nativeElement;
@@ -112,29 +112,22 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
 
     this.zoomBehavior = zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.1, 3])
+      // The visible area, measured here: d3's default reads the SVG's viewBox and width, which not every environment has.
+      .extent((): [[number, number], [number, number]] => {
+        const r = svgNative.getBoundingClientRect();
+        return [[0, 0], [r.width, r.height]];
+      })
       .on('zoom', e => { layer.setAttribute('transform', e.transform.toString()); });
 
     svg.call(this.zoomBehavior);
     this.zoomBehavior.transform(svg, zoomIdentity.translate(40, 40));
+    this.exportService.chart.set(layer); // the Export menu renders PDF/SVG/JPG from it
   }
 
   ngOnDestroy(): void {
+    this.exportService.chart.set(null);
     if (this.svgEl) {
       select<SVGSVGElement, unknown>(this.svgEl.nativeElement).on('.zoom', null);
-    }
-  }
-
-  // PDF export of the current tree view (ancestors / descendants / family).
-  readonly pdfSize = signal<PageFormat>('a4');
-  readonly exporting = signal(false);
-
-  async exportPdf(): Promise<void> {
-    if (this.exporting() || this.store.isEmpty() || !this.chartLayerEl) return;
-    this.exporting.set(true);
-    try {
-      await exportTreePdf(this.chartLayerEl.nativeElement, this.pdfSize());
-    } finally {
-      this.exporting.set(false);
     }
   }
 
@@ -149,6 +142,19 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
   setFocus(id: string): void { this.focusId.set(id); }
 
   edgePath(e: LayoutEdge): string {
+    if (e.ladder) {
+      // down the spine beside the parent, then straight across into the child
+      return `M${e.x1},${e.y1} V${e.y2} H${e.x2}`;
+    }
+    if (e.elbow) {
+      // straight segments: down from the parent, across at the halfway line, down to the child
+      const my = (e.y1 + e.y2) / 2;
+      return `M${e.x1},${e.y1} V${my} H${e.x2} V${e.y2}`;
+    }
+    if (e.vertical) {
+      const my = (e.y1 + e.y2) / 2;
+      return `M${e.x1},${e.y1} C${e.x1},${my} ${e.x2},${my} ${e.x2},${e.y2}`;
+    }
     const mx = (e.x1 + e.x2) / 2;
     return `M${e.x1},${e.y1} C${mx},${e.y1} ${mx},${e.y2} ${e.x2},${e.y2}`;
   }
@@ -195,22 +201,6 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
     return b || d ? `${b ?? '?'}–${d ?? ''}`.replace(/–$/, '') : '';
   }
 
-  dagEdgePath(e: DagEdge): string {
-    const my = (e.y1 + e.y2) / 2;
-    return `M${e.x1},${e.y1} C${e.x1},${my} ${e.x2},${my} ${e.x2},${e.y2}`;
-  }
-
-  personNodes(nodes: DagNode[]): DagNode[] { return nodes.filter(n => n.type === 'person'); }
-  unionNodes(nodes: DagNode[]): DagNode[] { return nodes.filter(n => n.type === 'union'); }
-
-  // DESIGN.md: union node is labeled with the marriage year.
-  unionYear(node: DagNode): string {
-    if (!node.unionId) return '';
-    const union = this.store.unions().find(u => u.id === node.unionId);
-    return union?.events.find(e => e.type === 'MARR')?.date?.match(/\d{4}/)?.[0] ?? '';
-  }
-
   readonly CARD_W = CARD_W;
   readonly CARD_H = CARD_H;
-  readonly UNION_R = UNION_R;
 }

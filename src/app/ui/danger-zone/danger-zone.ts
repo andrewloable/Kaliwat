@@ -1,4 +1,4 @@
-import { Component, input, output } from '@angular/core';
+import { Component, input, output, ChangeDetectionStrategy } from '@angular/core';
 
 @Component({
   selector: 'app-danger-zone',
@@ -15,6 +15,7 @@ import { Component, input, output } from '@angular/core';
       </div>
     }
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .confirm-modal {
       position: fixed; inset: 0;

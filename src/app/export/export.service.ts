@@ -1,9 +1,15 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { db } from '../core/db/kaliwat-db';
 import { TreeStore } from '../core/tree-store/tree.store';
 import { serializeAst } from '../gedcom/serialize/gedcom-serializer';
 import { exportGedzip } from '../gedcom/gedzip/gedzip';
 import { GedcomNode } from '../core/model/types';
+
+export interface BuiltFile {
+  blob: Blob;
+  name: string;
+  format: 'ged' | 'gdz';
+}
 
 const MIN_ID = '';
 const MAX_ID = '￿';
@@ -17,12 +23,24 @@ const MAX_ID = '￿';
 export class ExportService {
   private readonly store = inject(TreeStore);
 
+  /** The tree view's rendered chart layer while it is on screen (for PDF/SVG/JPG export). */
+  readonly chart = signal<SVGGElement | null>(null);
+
   /** Number of cached photo blobs for a tree — decides .gdz vs .ged. */
   async cachedMediaCount(treeId: string): Promise<number> {
     return db.mediaBlobs.where('[treeId+id]').between([treeId, MIN_ID], [treeId, MAX_ID]).count();
   }
 
+  /** Saves the tree to the user's computer (the Export action). */
   async export(): Promise<'ged' | 'gdz' | null> {
+    const built = await this.buildFile();
+    if (!built) return null;
+    this.download(built.blob, built.name);
+    return built.format;
+  }
+
+  /** The tree as a file, built in this browser and not downloaded: a .gdz when it has photos, else a .ged. */
+  async buildFile(): Promise<BuiltFile | null> {
     const treeId = this.store.currentTreeId();
     if (!treeId) return null;
 
@@ -33,8 +51,7 @@ export class ExportService {
       .where('[treeId+id]').between([treeId, MIN_ID], [treeId, MAX_ID]).toArray();
 
     if (blobs.length === 0) {
-      this.download(new Blob([serializeAst(nodes)], { type: 'text/plain' }), 'family-tree.ged');
-      return 'ged';
+      return { blob: new Blob([serializeAst(nodes)], { type: 'text/plain' }), name: 'family-tree.ged', format: 'ged' };
     }
 
     // .gdz: rewrite each remote FILE url to a local archive path, bundle blobs.
@@ -51,8 +68,7 @@ export class ExportService {
     }
     const rewritten = rewriteFilePaths(nodes, urlToLocal);
     const gdz = await exportGedzip(serializeAst(rewritten), entries);
-    this.download(gdz, 'family-tree.gdz');
-    return 'gdz';
+    return { blob: gdz, name: 'family-tree.gdz', format: 'gdz' };
   }
 
   /**

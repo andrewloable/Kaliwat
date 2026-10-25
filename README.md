@@ -29,7 +29,7 @@ _Searchable people list with the same sample tree:_
 
 ## Stack
 
-Angular 20 (standalone components + signals, no NgRx) · `read-gedcom` for parsing + a hand-rolled serializer · `d3-hierarchy`/`d3-zoom`/`d3-selection` for layout · SVG card rendering · `jszip` for `.gdz` · `jspdf` + `svg2pdf.js` for PDF · Dexie/IndexedDB for the model and photo blobs · GEDCOM parsing runs in a Web Worker.
+Angular 22 (standalone components + signals, no NgRx) · `read-gedcom` for parsing + a hand-rolled serializer · `d3-hierarchy`/`d3-zoom`/`d3-selection` for layout · SVG card rendering · `jszip` for `.gdz` · `jspdf` + `svg2pdf.js` for PDF · Dexie/IndexedDB for the model and photo blobs · GEDCOM parsing runs in a Web Worker.
 
 ## Architecture
 

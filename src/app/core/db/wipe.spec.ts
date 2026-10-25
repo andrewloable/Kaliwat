@@ -1,12 +1,8 @@
 import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { KaliwatDb } from './kaliwat-db';
+import { db } from './kaliwat-db';
+import { WipeService } from './wipe.service';
 import Dexie from 'dexie';
-
-let dbSeq = 0;
-function makeDb() {
-  return new KaliwatDb(`kaliwat-wipe-test-${++dbSeq}`);
-}
 
 const TREE_ID = 'tree-wipe';
 const OTHER_TREE = 'tree-other';
@@ -27,37 +23,33 @@ function makeFakeCaches(cacheNames: string[]) {
 }
 
 describe('wipeTreeData', () => {
-  it('clears all stores for the target tree', async () => {
-    const d = makeDb();
-    await d.open();
-    await d.individuals.bulkPut([
+  // Calls the real service on the singleton db (an earlier version re-ran the deletes by hand, so it never exercised
+  // the service and missed that the tree record was deleted outside the transaction).
+  it('clears all stores for the target tree, including its tree record', async () => {
+    await db.individuals.bulkPut([
       { treeId: TREE_ID, id: 'a', data: { id: 'a', names: [], events: [], unions: [], mediaIds: [], notes: [] } },
     ]);
-    await d.trees.put({ id: TREE_ID, meta: {}, updatedAt: 0 });
+    await db.trees.put({ id: TREE_ID, meta: {}, updatedAt: 0 });
 
-    // Run wipe operations directly on this db instance
-    await d.individuals.where('[treeId+id]').between([TREE_ID, Dexie.minKey], [TREE_ID, Dexie.maxKey]).delete();
-    await d.trees.delete(TREE_ID);
+    await new WipeService().wipeTreeData(TREE_ID);
 
-    expect(await d.individuals.count()).toBe(0);
-    expect(await d.trees.get(TREE_ID)).toBeUndefined();
-    d.close();
+    expect(await db.individuals.where('[treeId+id]').between([TREE_ID, Dexie.minKey], [TREE_ID, Dexie.maxKey]).count()).toBe(0);
+    expect(await db.trees.get(TREE_ID)).toBeUndefined();
   });
 
   it('does not touch data for other trees', async () => {
-    const d = makeDb();
-    await d.open();
-    await d.individuals.bulkPut([
+    await db.individuals.bulkPut([
       { treeId: TREE_ID, id: 'a', data: { id: 'a', names: [], events: [], unions: [], mediaIds: [], notes: [] } },
       { treeId: OTHER_TREE, id: 'b', data: { id: 'b', names: [], events: [], unions: [], mediaIds: [], notes: [] } },
     ]);
+    await db.trees.put({ id: OTHER_TREE, meta: {}, updatedAt: 0 });
 
-    await d.individuals.where('[treeId+id]').between([TREE_ID, Dexie.minKey], [TREE_ID, Dexie.maxKey]).delete();
+    await new WipeService().wipeTreeData(TREE_ID);
 
-    const remaining = await d.individuals.toArray();
-    expect(remaining.length).toBe(1);
-    expect(remaining[0].treeId).toBe(OTHER_TREE);
-    d.close();
+    expect(await db.individuals.get([OTHER_TREE, 'b'])).toBeDefined();
+    expect(await db.trees.get(OTHER_TREE)).toBeDefined();
+    await db.individuals.where('treeId').equals(OTHER_TREE).delete();
+    await db.trees.delete(OTHER_TREE);
   });
 });
 

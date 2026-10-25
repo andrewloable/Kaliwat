@@ -13,6 +13,7 @@ export interface GedcomEvent {
   type: string;
   date?: string;
   place?: string;
+  description?: string; // the record's own value: an occupation, a school, details of an "other" event
   citations: string[];
   notes: string[];
   raw?: GedcomNode;
