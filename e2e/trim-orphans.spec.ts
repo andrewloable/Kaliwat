@@ -1,5 +1,5 @@
 /**
- * E2E: trim to one side from the person editor, and delete only the orphan groups
+ * E2E: trim a person's ancestors or descendants from the person editor, and delete only the orphan groups
  * the user ticks in the "not connected to the main tree" review.
  */
 import { test, expect, Page } from '@playwright/test';
@@ -55,18 +55,28 @@ test.describe('Trim branch + orphan cleanup', () => {
     await nameAndSave(page, 'Grandpa', true);
   });
 
-  test('keeping one side deletes only the relatives on the other side', async ({ page }) => {
+  async function trimFromDad(page: Page, side: 'ancestors' | 'descendants') {
     await row(page, 'Dad').click();
     await page.locator('details').evaluateAll((ds) => ds.forEach((d) => ((d as HTMLDetailsElement).open = true)));
-    await page.getByRole('button', { name: /Keep children/ }).click();
-    await expect(page.getByText(/Keep only children and delete 1 other person permanently/)).toBeVisible();
+    await page.getByRole('button', { name: new RegExp(`^Trim ${side}`) }).click();
+    await expect(page.getByText(`Trim ${side}: delete 1 person permanently?`)).toBeVisible();
     await page.getByRole('button', { name: 'Trim', exact: true }).click();
-    await expect(page.getByText(/Keep only children/)).toHaveCount(0);
+    await expect(page.getByText(`Trim ${side}: delete`)).toHaveCount(0);
     await page.getByRole('button', { name: 'Cancel' }).click();
+  }
 
+  test('trimming ancestors deletes the parents side only', async ({ page }) => {
+    await trimFromDad(page, 'ancestors');
     await expect(row(page, 'Grandpa')).toHaveCount(0);
     await expect(row(page, 'Dad')).toBeVisible();
     await expect(row(page, 'Me')).toBeVisible();
+  });
+
+  test('trimming descendants deletes the children side only', async ({ page }) => {
+    await trimFromDad(page, 'descendants');
+    await expect(row(page, 'Me')).toHaveCount(0);
+    await expect(row(page, 'Dad')).toBeVisible();
+    await expect(row(page, 'Grandpa')).toBeVisible();
   });
 
   test('orphan review deletes only the ticked groups', async ({ page }) => {

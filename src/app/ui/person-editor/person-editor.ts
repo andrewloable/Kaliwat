@@ -1,7 +1,7 @@
 import { Component, ElementRef, Injector, afterNextRender, computed, inject, signal, viewChild, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TreeStore } from '../../core/tree-store/tree.store';
-import { EditService, PersonFormData, trimSet, validateFact, FACT_KINDS, FactKind } from '../../core/edit/edit.service';
+import { EditService, PersonFormData, trimSet, TrimSide, validateFact, FACT_KINDS, FactKind } from '../../core/edit/edit.service';
 import { PhotoCropComponent } from '../photo-crop/photo-crop';
 import { QuickAddRelativeComponent } from './quick-add-relative';
 import type { RelativeKind } from '../../core/edit/relative-defaults';
@@ -347,25 +347,24 @@ function indi2form(indi: Individual): PersonFormData {
             }
               </div>
             </details>
-            @if (trimOptions().length > 1) {
+            @if (trimOptions().length) {
               <details class="section">
                 <summary>Trim branch</summary>
                 <div class="section-body connect-picker">
               @if (confirmingTrim(); as t) {
                 <span class="confirm-text">
-                  Keep only {{ t.label }}
-                  {{ t.count ? 'and delete ' + t.count + ' other ' + (t.count === 1 ? 'person' : 'people') + ' permanently' : '(nothing to delete: everyone is also related through this side)' }}?
+                  Trim {{ t.side }}: delete {{ t.count }} {{ t.count === 1 ? 'person' : 'people' }} permanently?
                 </span>
                 <div class="relatives">
-                  <button type="button" class="confirm-delete" (click)="trim(t.unionId)">Trim</button>
+                  <button type="button" class="confirm-delete" (click)="trim(t.side)">Trim</button>
                   <button type="button" class="keep-btn" (click)="confirmingTrim.set(null)">Cancel</button>
                 </div>
               } @else {
-                <span class="confirm-text">Choose the side to keep. Relatives connected only through the other sides are deleted.</span>
+                <span class="confirm-text">Ancestors: parents and up, with siblings and other relatives reached only through them. Descendants: children and down, with the children's partners. This person's own partners stay.</span>
                 <div class="relatives">
-                  @for (t of trimOptions(); track t.unionId) {
+                  @for (t of trimOptions(); track t.side) {
                     <button type="button" class="rel-btn" (click)="confirmingTrim.set(t)">
-                      Keep {{ t.label }} <span class="ci-years">−{{ t.count }}</span>
+                      Trim {{ t.side }} <span class="ci-years">−{{ t.count }}</span>
                     </button>
                   }
                 </div>
@@ -608,24 +607,17 @@ export class PersonEditorComponent {
     return part('b.', f.birthDate, f.birthPlace) + part('d.', f.deathDate, f.deathPlace);
   }
 
-  // Trim branch: one "keep this side" option per union this person belongs to (as
-  // child or partner), with how many people keeping only that side would delete.
+  // Trim: delete this person's ancestors or descendants side (see trimSet), with how many
+  // people each would delete. A side with nobody to delete is not offered.
   readonly trimOptions = computed(() => {
     const id = this.state();
     if (id === 'closed' || id === 'new') return [];
     const unions = this.store.unions();
-    const names = new Map(this.store.individuals().map((i) => [i.id, i.names[0]?.full || '(no name)']));
-    return unions
-      .filter((u) => u.spouseIds.includes(id) || u.childLinks.some((c) => c.childId === id))
-      .map((u) => {
-        const others = u.spouseIds.filter((s) => s !== id).map((s) => names.get(s)).join(' & ');
-        const label = u.spouseIds.includes(id)
-          ? (others ? `family with ${others}` : 'children')
-          : `parents' side${others ? ` (${others})` : ''}`;
-        return { unionId: u.id, label, count: trimSet(unions, id, u.id).length };
-      });
+    return (['ancestors', 'descendants'] as const)
+      .map((side) => ({ side, count: trimSet(unions, id, side).length }))
+      .filter((t) => t.count > 0);
   });
-  readonly confirmingTrim = signal<{ unionId: string; label: string; count: number } | null>(null);
+  readonly confirmingTrim = signal<{ side: TrimSide; count: number } | null>(null);
 
   // The person's family links, each removable: their parents' family, partners, children.
   readonly relations = computed(() => {
@@ -702,11 +694,11 @@ export class PersonEditorComponent {
     this.close();
   }
 
-  /** Keep the edited person with their `unionId` side; delete their other relatives. */
-  trim(unionId: string): void {
+  /** Delete the edited person's ancestors or descendants side. */
+  trim(side: TrimSide): void {
     const id = this.state();
     if (id === 'closed' || id === 'new') return;
-    this.editService.trimToSide(id, unionId);
+    this.editService.trim(id, side);
     this.confirmingTrim.set(null);
   }
 

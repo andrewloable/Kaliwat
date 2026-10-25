@@ -61,25 +61,34 @@ function isObjeFor(node: GedcomNode, file: string): boolean {
   return node.tag === 'OBJE' && node.children.some((c) => c.tag === 'FILE' && c.value === file);
 }
 
+export type TrimSide = 'ancestors' | 'descendants';
+
 /**
- * Who a "keep one side" trim removes: everyone connected to `personId` who is no
- * longer reachable once `personId` keeps only their link to `keepUnionId` (e.g. keep
- * the family with a spouse, drop the parents, siblings and other marriages). Anyone
- * also related through the kept side stays.
+ * Who trimming one side of `personId` removes. Ancestors: everyone reached only through
+ * their parents' families (parents and up, siblings, aunts and uncles, cousins).
+ * Descendants: everyone reached only through their children (children and down, with the
+ * children's partners and in-laws); the person's own partners stay. Anyone also related
+ * through the kept side stays.
  */
-export function trimSet(unions: Union[], personId: UUID, keepUnionId: UUID): UUID[] {
+export function trimSet(unions: Union[], personId: UUID, side: TrimSide): UUID[] {
   const members = (u: Union) => [...u.spouseIds, ...u.childLinks.map((c) => c.childId)];
   const byPerson = new Map<UUID, Union[]>();
   for (const u of unions) for (const p of members(u)) byPerson.set(p, [...(byPerson.get(p) ?? []), u]);
 
-  const reach = (keepOnly: boolean): Set<UUID> => {
+  // The links a trim cuts: from the person up into their parents' families, or from their
+  // own families down to the children (whoever enters that family).
+  const linked = (u: Union, from: UUID): UUID[] => {
+    if (side === 'ancestors') return from === personId && !u.spouseIds.includes(personId) ? [] : members(u);
+    return u.spouseIds.includes(personId) ? u.spouseIds : members(u);
+  };
+
+  const reach = (cut: boolean): Set<UUID> => {
     const seen = new Set([personId]);
     const queue = [personId];
     while (queue.length) {
       const p = queue.pop()!;
       for (const u of byPerson.get(p) ?? []) {
-        if (keepOnly && p === personId && u.id !== keepUnionId) continue;
-        for (const q of members(u)) if (!seen.has(q)) { seen.add(q); queue.push(q); }
+        for (const q of cut ? linked(u, p) : members(u)) if (!seen.has(q)) { seen.add(q); queue.push(q); }
       }
     }
     return seen;
@@ -358,12 +367,11 @@ export class EditService {
   }
 
   /**
-   * Trim to one side: keep `personId` with their `keepUnionId` family (and everyone
-   * related through it), delete everyone else connected to them (see trimSet).
-   * Returns how many people were removed.
+   * Trim the ancestors or the descendants of `personId`: delete everyone connected to
+   * them only through that side (see trimSet). Returns how many people were removed.
    */
-  trimToSide(personId: UUID, keepUnionId: UUID): number {
-    const gone = trimSet(this.store.unions(), personId, keepUnionId);
+  trim(personId: UUID, side: TrimSide): number {
+    const gone = trimSet(this.store.unions(), personId, side);
     this._removePeople(new Set(gone));
     return gone.length;
   }

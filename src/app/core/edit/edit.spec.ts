@@ -134,17 +134,16 @@ describe('EditService', () => {
     expect(store.individuals().find(i => i.id === a)?.unions).toHaveLength(0);
   });
 
-  describe('trimToSide', () => {
-    // G+H → (D, E);  E+A → C;  P+Q → M;  D+M → X;  D+S → Y (second marriage)
+  describe('trim', () => {
+    // G+H → (D, E);  E+A → C;  P+Q → M;  D+M → X;  X+Z → W;  D+S → Y (second marriage)
     let g: string, h: string, d: string, e: string, a: string, c: string;
-    let p: string, q: string, m: string, x: string, s: string, y: string;
+    let p: string, q: string, m: string, x: string, z: string, w: string, s: string, y: string;
     const famOf = (one: string, two: string) =>
       store.unions().find(u => u.spouseIds.includes(one) && u.spouseIds.includes(two))!.id;
-    const parentsOf = (kid: string) => store.unions().find(u => u.childLinks.some(l => l.childId === kid))!.id;
     const ids = () => store.individuals().map(i => i.id).sort();
 
     beforeEach(() => {
-      [g, h, d, e, a, c, p, q, m, x, s, y] = ['G', 'H', 'D', 'E', 'A', 'C', 'P', 'Q', 'M', 'X', 'S', 'Y']
+      [g, h, d, e, a, c, p, q, m, x, z, w, s, y] = ['G', 'H', 'D', 'E', 'A', 'C', 'P', 'Q', 'M', 'X', 'Z', 'W', 'S', 'Y']
         .map(n => service.createIndividual(baseForm({ given: n })));
       service.linkSpouses(g, h);
       service.addParentChild(g, d);
@@ -155,27 +154,38 @@ describe('EditService', () => {
       service.addParentChild(p, m);
       service.linkSpouses(d, m);
       service.addParentChild(d, x);
+      service.linkSpouses(x, z);
+      service.addParentChild(x, w);
       service.linkSpouses(d, s);
       store.upsertUnion({ ...store.unions().find(u => u.id === famOf(d, s))!, childLinks: [{ childId: y, citations: [], notes: [] }] });
     });
 
-    it('keeping the family with a wife drops parents, siblings and other marriages, keeps her relatives', () => {
-      const removed = service.trimToSide(d, famOf(d, m));
-      expect(removed).toBe(7);
-      expect(ids()).toEqual([d, m, x, p, q].sort());
-      expect(store.unions().map(u => u.id).sort()).toEqual([famOf(d, m), famOf(p, q)].sort());
-      expect(store.individuals().find(i => i.id === d)!.unions.map(r => r.unionId)).toEqual([famOf(d, m)]);
+    it('trimming ancestors removes the parents and everyone reached only through them', () => {
+      const removed = service.trim(d, 'ancestors');
+      expect(removed).toBe(5);
+      expect(ids()).toEqual([d, m, x, z, w, p, q, s, y].sort());
+      expect(store.individuals().find(i => i.id === d)!.unions.map(r => r.unionId).sort())
+        .toEqual([famOf(d, m), famOf(d, s)].sort());
     });
 
-    it('keeping the parents side drops every marriage and its relatives', () => {
-      service.trimToSide(d, parentsOf(d));
-      expect(ids()).toEqual([g, h, d, e, a, c].sort());
-      expect(store.individuals().find(i => i.id === d)!.unions).toHaveLength(0);
+    it('trimming descendants removes the children and their families, keeps partners and the ancestors side', () => {
+      const removed = service.trim(d, 'descendants');
+      expect(removed).toBe(4);
+      expect(ids()).toEqual([d, m, s, p, q, g, h, e, a, c].sort());
+      // Both marriages stay (two partners each); only the children are gone from them.
+      expect(store.unions().find(u => u.id === famOf(d, m))!.childLinks).toEqual([]);
+      expect(store.unions().find(u => u.id === famOf(d, s))!.childLinks).toEqual([]);
     });
 
     it('keeps people also related through the kept side (cousin marriage)', () => {
-      service.linkSpouses(x, c);
-      expect(trimSet(store.unions(), d, famOf(d, m)).sort()).toEqual([s, y].sort());
+      service.linkSpouses(x, c); // D's son marries D's niece
+      expect(trimSet(store.unions(), d, 'ancestors')).toEqual([]);
+      expect(trimSet(store.unions(), d, 'descendants')).toEqual([y]);
+    });
+
+    it('has nothing to trim on a side the person does not have', () => {
+      expect(trimSet(store.unions(), p, 'ancestors')).toEqual([]);
+      expect(trimSet(store.unions(), w, 'descendants')).toEqual([]);
     });
   });
 
