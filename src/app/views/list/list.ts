@@ -79,7 +79,7 @@ function toRow(indi: Individual): ListRow {
         }
       }
 
-      <app-orphans />
+      <app-orphans [dialog]="false" />
 
       @if (store.isEmpty()) {
         <div class="empty-state">

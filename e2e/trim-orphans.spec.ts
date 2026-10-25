@@ -57,6 +57,7 @@ test.describe('Trim branch + orphan cleanup', () => {
 
   async function trimFromDad(page: Page, side: 'ancestors' | 'descendants') {
     await row(page, 'Dad').click();
+    await expect(page.getByRole('dialog')).toBeVisible(); // open the sections only once the editor is drawn
     await page.locator('details').evaluateAll((ds) => ds.forEach((d) => ((d as HTMLDetailsElement).open = true)));
     await page.getByRole('button', { name: new RegExp(`^Trim ${side}`) }).click();
     await expect(page.getByText(`Trim ${side}: delete 1 person permanently?`)).toBeVisible();
@@ -81,6 +82,7 @@ test.describe('Trim branch + orphan cleanup', () => {
 
   test('both trim buttons always show; a side with nobody on it is disabled', async ({ page }) => {
     await row(page, 'Me').click(); // Me has parents (Dad) but no children
+    await expect(page.getByRole('dialog')).toBeVisible();
     await page.locator('details').evaluateAll((ds) => ds.forEach((d) => ((d as HTMLDetailsElement).open = true)));
     await expect(page.getByRole('button', { name: /^Trim ancestors/ })).toBeEnabled();
     const desc = page.getByRole('button', { name: /^Trim descendants/ });
@@ -102,5 +104,26 @@ test.describe('Trim branch + orphan cleanup', () => {
     await expect(row(page, 'Stray2')).toBeVisible();
     await expect(page.getByText('1 person is not connected to the main tree.')).toBeVisible();
     await expect(row(page, 'Grandpa')).toBeVisible();
+  });
+
+  test('the footer shows unconnected people on every view and opens the review', async ({ page }) => {
+    await addLoner(page, 'Stray1');
+    const footerLink = page.locator('footer').getByRole('button', { name: '1 not connected' });
+    await expect(footerLink).toBeVisible();
+    await page.getByRole('tab', { name: 'Tree' }).click();
+    await expect(footerLink).toBeVisible();
+    await footerLink.click();
+    await expect(page.getByRole('dialog', { name: 'Not connected to the main tree' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('Dismiss hides the banner until the number of unconnected people changes', async ({ page }) => {
+    await addLoner(page, 'Stray1');
+    await expect(page.getByText('1 person is not connected to the main tree.')).toBeVisible();
+    await page.locator('.orphan-banner').getByRole('button', { name: 'Dismiss' }).click();
+    await expect(page.locator('.orphan-banner')).toHaveCount(0);
+    await addLoner(page, 'Stray2');
+    await expect(page.getByText('2 people are not connected to the main tree.')).toBeVisible();
   });
 });

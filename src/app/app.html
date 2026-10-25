@@ -2,4 +2,12 @@
 <main>
   <router-outlet />
 </main>
-<footer class="app-footer">Kaliwat v{{ version }}</footer>
+<!-- The review of unconnected people, once for the whole app (the List banner and the footer open it). -->
+<app-orphans [banner]="false" />
+<footer class="app-footer">
+  <span>Kaliwat v{{ version }}</span>
+  @if (orphans.total(); as n) {
+    <span aria-hidden="true">·</span>
+    <button type="button" class="footer-link" (click)="orphans.open()">{{ n }} not connected</button>
+  }
+</footer>

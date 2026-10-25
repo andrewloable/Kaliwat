@@ -40,9 +40,12 @@ test('arrow keys move from the search field into the tree results, Enter picks o
 
 test('Escape in the results clears the search and returns to the field', async ({ page }) => {
   await page.getByRole('tab', { name: 'Tree' }).click();
+  await expect(page.locator('.card-node').first()).toBeVisible(); // the tree view handles the keys: wait for it
   const field = page.getByRole('searchbox', { name: 'Search people' });
   await field.fill('Reyes');
+  await expect(page.locator('.tsr-item')).toHaveCount(3);
   await page.keyboard.press('ArrowDown');
+  await expect(page.locator('.tsr-item').nth(0)).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.locator('.tsr-item')).toHaveCount(0);
   await expect(field).toBeFocused();

@@ -1,24 +1,26 @@
-import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
-import { TreeStore } from '../../core/tree-store/tree.store';
-import { EditService, orphanGroups } from '../../core/edit/edit.service';
+import { Component, ElementRef, Injector, afterNextRender, computed, effect, inject, input, signal, viewChild, ChangeDetectionStrategy } from '@angular/core';
+import { EditService } from '../../core/edit/edit.service';
+import { OrphansService } from './orphans.service';
+import { trapModal } from '../dialog/modal-keys';
 
 /**
  * Banner + picker for people not connected to the main tree. Nothing is deleted
  * until the user ticks the groups to remove and confirms; unticked groups stay.
+ * The List view shows the banner; the app shows the dialog once, so the footer can open it from any view.
  */
 @Component({
   selector: 'app-orphans',
   template: `
-    @if (groups().length && !dismissed()) {
+    @if (banner() && orphans.bannerVisible()) {
       <div class="orphan-banner" role="status">
         {{ total() }} {{ total() === 1 ? 'person is' : 'people are' }} not connected to the main tree.
-        <button type="button" class="link-btn" (click)="reviewing.set(true)">Review</button>
-        <button type="button" class="link-btn" (click)="dismissed.set(true)">Dismiss</button>
+        <button type="button" class="link-btn" (click)="orphans.open()">Review</button>
+        <button type="button" class="link-btn" (click)="orphans.dismiss()">Dismiss</button>
       </div>
     }
-    @if (reviewing()) {
+    @if (dialog() && orphans.reviewing()) {
       <div class="backdrop" (click)="close()" aria-hidden="true"></div>
-      <div class="panel" role="dialog" aria-modal="true" aria-labelledby="orphans-title">
+      <div #panel class="panel" role="dialog" aria-modal="true" aria-labelledby="orphans-title">
         <h2 id="orphans-title">Not connected to the main tree</h2>
         <p class="hint">Tick the groups you want to delete. Unticked groups are kept.</p>
         <ul>
@@ -78,23 +80,30 @@ import { EditService, orphanGroups } from '../../core/edit/edit.service';
   `],
 })
 export class OrphansComponent {
-  private readonly store = inject(TreeStore);
+  protected readonly orphans = inject(OrphansService);
   private readonly editService = inject(EditService);
+  private readonly injector = inject(Injector);
+  private readonly panel = viewChild<ElementRef<HTMLElement>>('panel');
+  private releaseModal?: () => void;
 
-  readonly reviewing = signal(false);
-  readonly dismissed = signal(false);
+  /** Show the banner (the List view) and/or the review dialog (rendered once by the app). */
+  readonly banner = input(true);
+  readonly dialog = input(true);
+
+  readonly groups = this.orphans.groups;
+  readonly total = this.orphans.total;
   readonly picked = signal(new Set<string>());
-
-  readonly groups = computed(() => {
-    const names = new Map(this.store.individuals().map((i) => [i.id, i.names[0]?.full || '(no name)']));
-    return orphanGroups(this.store.individuals(), this.store.unions()).map((ids) => {
-      const shown = ids.slice(0, 3).map((id) => names.get(id)).join(', ');
-      return { key: ids[0], ids, label: ids.length > 3 ? `${shown} +${ids.length - 3} more` : shown };
-    });
-  });
-  readonly total = computed(() => this.groups().reduce((n, g) => n + g.ids.length, 0));
   readonly pickedIds = computed(() => this.groups().filter((g) => this.picked().has(g.key)).flatMap((g) => g.ids));
   readonly pickedCount = computed(() => this.pickedIds().length);
+
+  // When the review opens (from the banner or the footer): focus moves in, Tab stays inside, Escape closes it.
+  private readonly armModal = effect(() => {
+    if (!this.dialog() || !this.orphans.reviewing() || this.releaseModal) return;
+    afterNextRender(() => {
+      const el = this.panel()?.nativeElement;
+      if (el && !this.releaseModal) this.releaseModal = trapModal(el, () => this.close());
+    }, { injector: this.injector });
+  });
 
   toggle(key: string): void {
     this.picked.update((s) => {
@@ -110,7 +119,9 @@ export class OrphansComponent {
   }
 
   close(): void {
+    this.releaseModal?.();
+    this.releaseModal = undefined;
     this.picked.set(new Set());
-    this.reviewing.set(false);
+    this.orphans.close();
   }
 }
