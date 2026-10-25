@@ -14,7 +14,8 @@ export class WipeService {
       db.mediaBlobs as unknown as Dexie.Table<any, any>,
       db.rawAst as unknown as Dexie.Table<any, any>,
     ];
-    await db.transaction('rw', tables, async () => {
+    // The tree record is in the transaction too: Dexie rejects a table used outside the transaction's scope.
+    await db.transaction('rw', [...tables, db.trees as unknown as Dexie.Table<any, any>], async () => {
       await Promise.all(
         tables.map((t) =>
           t.where('[treeId+id]').between([treeId, Dexie.minKey], [treeId, Dexie.maxKey]).delete(),

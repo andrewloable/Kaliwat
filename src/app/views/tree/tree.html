@@ -58,9 +58,9 @@
              [attr.transform]="'translate(' + node.x + ',' + node.y + ')'"
              role="button" tabindex="0"
              [attr.aria-label]="displayName(node.person)"
-             (click)="setFocus(node.person.id)"
-             (keydown.enter)="setFocus(node.person.id)"
-             (keydown.space)="setFocus(node.person.id)">
+             (click)="onCardChosen(node.person.id)"
+             (keydown.enter)="onCardChosen(node.person.id)"
+             (keydown.space)="onCardChosen(node.person.id)">
             <rect [attr.width]="CARD_W" [attr.height]="CARD_H" rx="8"
               fill="var(--card)"
               [attr.stroke]="node.isFocus ? 'var(--accent)' : 'var(--line)'"

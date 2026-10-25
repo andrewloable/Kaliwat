@@ -49,6 +49,12 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
     this.centerOnFocus();
   }
 
+  /** A card chosen in the drawing: focus that person and centre the view on them. */
+  onCardChosen(id: string): void {
+    this.setFocus(id);
+    this.centerOnFocus();
+  }
+
   /** Pan (at current scale) so the focused person sits in the viewport centre. */
   private centerOnFocus(): void {
     if (!this.svgEl || !this.zoomBehavior) return;
@@ -104,6 +110,11 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
 
     this.zoomBehavior = zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.1, 3])
+      // The visible area, measured here: d3's default reads the SVG's viewBox and width, which not every environment has.
+      .extent((): [[number, number], [number, number]] => {
+        const r = svgNative.getBoundingClientRect();
+        return [[0, 0], [r.width, r.height]];
+      })
       .on('zoom', e => { layer.setAttribute('transform', e.transform.toString()); });
 
     svg.call(this.zoomBehavior);
