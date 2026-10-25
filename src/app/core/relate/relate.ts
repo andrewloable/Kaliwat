@@ -4,6 +4,31 @@ import { Individual, Union, UUID } from '../model/types';
  *  last), and for blood relatives their nearest common ancestor. */
 export interface Kinship { term: string; path: UUID[]; lca?: UUID }
 
+/** Id prefix of the stand-in parent of a family whose parents are not in the tree. */
+export const UNRECORDED_PARENTS = 'fam:';
+
+/**
+ * A family record still links its children when none of its parents is in the tree (a GEDCOM family with only
+ * children, or one whose parents were trimmed): the tree view and the unconnected-people check treat them as
+ * siblings. Kinship is found through parents, so each such family gets a stand-in parent, "Parents not
+ * recorded". Returns copies of the maps when anything is added; the inputs are never changed.
+ */
+export function withUnrecordedParents(
+  individuals: Map<UUID, Individual>,
+  unions: Map<UUID, Union>,
+): { individuals: Map<UUID, Individual>; unions: Map<UUID, Union> } {
+  let people = individuals;
+  let families = unions;
+  for (const u of unions.values()) {
+    if (!u.childLinks.length || u.spouseIds.some((s) => individuals.has(s))) continue;
+    if (people === individuals) { people = new Map(individuals); families = new Map(unions); }
+    const id = UNRECORDED_PARENTS + u.id;
+    people.set(id, { id, names: [{ full: 'Parents not recorded' }], events: [], unions: [{ unionId: u.id }], mediaIds: [], notes: [] });
+    families.set(u.id, { ...u, spouseIds: [id] });
+  }
+  return { individuals: people, unions: families };
+}
+
 function parentIds(id: UUID, unions: Map<UUID, Union>): UUID[] {
   const out: UUID[] = [];
   for (const u of unions.values())
@@ -141,7 +166,8 @@ function bloodKinship(
   if (bestLca === null) return null;
 
   let term = kinshipTerm(pathA.length - 1, pathB.length - 1);
-  if (term === 'sibling' && sharedParentCount(aId, bId, unions) < 2) term = 'half-sibling';
+  // Two recorded parents in common make full siblings; a stand-in for unrecorded parents is no evidence of half.
+  if (term === 'sibling' && sharedParentCount(aId, bId, unions) < 2 && !bestLca.startsWith(UNRECORDED_PARENTS)) term = 'half-sibling';
   return { term, path: [...pathA, ...[...pathB].reverse().slice(1)], lca: bestLca };
 }
 
@@ -164,6 +190,7 @@ export function relationship(
   if (!individuals.has(aId) || !individuals.has(bId))
     return { term: 'not connected', path: [] };
   if (aId === bId) return { term: 'self', path: [aId] };
+  ({ individuals, unions } = withUnrecordedParents(individuals, unions));
 
   const blood = bloodKinship(aId, bId, individuals, unions);
   if (blood) return blood;

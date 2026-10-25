@@ -126,4 +126,15 @@ test.describe('Trim branch + orphan cleanup', () => {
     await addLoner(page, 'Stray2');
     await expect(page.getByText('2 people are not connected to the main tree.')).toBeVisible();
   });
+
+  test('after a trim the footer still offers the check, and the review says everyone is connected', async ({ page }) => {
+    await trimFromDad(page, 'ancestors');
+    const check = page.locator('footer').getByRole('button', { name: 'All connected' });
+    await expect(check).toBeVisible();
+    await check.click();
+    const review = page.getByRole('dialog', { name: 'Everyone is connected' });
+    await expect(review).toContainText('Every person is linked to the main tree.');
+    await review.getByRole('button', { name: 'Close' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
 });

@@ -3,6 +3,7 @@ import { RouterOutlet } from '@angular/router';
 import { TopBarComponent } from './ui/top-bar/top-bar';
 import { OrphansComponent } from './ui/orphans/orphans';
 import { OrphansService } from './ui/orphans/orphans.service';
+import { TreeStore } from './core/tree-store/tree.store';
 import { version } from '../../package.json';
 
 @Component({
@@ -16,4 +17,5 @@ export class App {
   protected readonly version = version;
   // Unconnected people: the footer entry is always there while any exist, on every view.
   protected readonly orphans = inject(OrphansService);
+  protected readonly store = inject(TreeStore);
 }

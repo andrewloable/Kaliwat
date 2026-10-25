@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { relationship, generations, traceLayout } from './relate';
+import { relationship, generations, traceLayout, withUnrecordedParents } from './relate';
 import { Individual, Union, UUID } from '../model/types';
 
 function mkI(id: UUID): Individual {
@@ -202,5 +202,39 @@ describe('traceLayout()', () => {
     expect(at(pair, 'SPOUSE').y).toBe(at(pair, 'ME').y);
     expect(at(pair, 'SPOUSE').x).toBeGreaterThan(at(pair, 'ME').x);
     expect(pair.links).toEqual([expect.objectContaining({ spouse: true })]);
+  });
+});
+
+describe('families whose parents are not recorded', () => {
+  const p = (id: string): Individual => ({ id, names: [{ full: id }], events: [], unions: [], mediaIds: [], notes: [] });
+  const kid = (childId: string) => ({ childId, citations: [], notes: [] });
+  // A and B are children of family F, which names no parent; A's child C and B's child D are cousins.
+  const people = new Map(['A', 'B', 'C', 'D', 'X'].map((id) => [id, p(id)]));
+  const unions = new Map<string, Union>([
+    ['F', { id: 'F', spouseIds: [], events: [], childLinks: [kid('A'), kid('B')] }],
+    ['FA', { id: 'FA', spouseIds: ['A'], events: [], childLinks: [kid('C')] }],
+    ['FB', { id: 'FB', spouseIds: ['B'], events: [], childLinks: [kid('D')] }],
+  ]);
+
+  it('children of the same family are siblings', () => {
+    expect(relationship('A', 'B', people, unions).term).toBe('sibling');
+  });
+
+  it('their children are cousins', () => {
+    expect(relationship('C', 'D', people, unions).term).toBe('1st cousin');
+  });
+
+  it('a family whose recorded parent is not in the tree still links its children', () => {
+    const u = new Map<string, Union>([['G', { id: 'G', spouseIds: ['MISSING'], events: [], childLinks: [kid('A'), kid('B')] }]]);
+    expect(relationship('A', 'B', people, u).term).toBe('sibling');
+  });
+
+  it('the chain goes through a "parents not recorded" placeholder that the trace can draw', () => {
+    const r = relationship('A', 'B', people, unions);
+    expect(r.path).toHaveLength(3);
+    const aug = withUnrecordedParents(people, unions);
+    expect(aug.individuals.get(r.path[1])?.names[0].full).toBe('Parents not recorded');
+    expect(traceLayout(r.path, [...aug.unions.values()]).cards).toHaveLength(3);
+    expect(people.has(r.path[1])).toBe(false); // the inputs are not changed
   });
 });

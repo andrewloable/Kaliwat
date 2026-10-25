@@ -21,7 +21,19 @@ import { trapModal } from '../dialog/modal-keys';
     @if (dialog() && orphans.reviewing()) {
       <div class="backdrop" (click)="close()" aria-hidden="true"></div>
       <div #panel class="panel" role="dialog" aria-modal="true" aria-labelledby="orphans-title">
-        <h2 id="orphans-title">Not connected to the main tree</h2>
+        <h2 id="orphans-title">{{ groups().length ? 'Not connected to the main tree' : 'Everyone is connected' }}</h2>
+        @if (orphans.lastScan(); as s) {
+          <p class="scan-line">
+            Checked {{ s.people }} {{ s.people === 1 ? 'person' : 'people' }} at {{ s.at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}.
+            <button type="button" class="link-btn" (click)="orphans.scan()">Scan again</button>
+          </p>
+        }
+        @if (!groups().length) {
+          <p class="hint">Every person is linked to the main tree. There is nothing to clean up.</p>
+          <div class="actions">
+            <button type="button" class="keep-btn" (click)="close()">Close</button>
+          </div>
+        } @else {
         <p class="hint">Tick the groups you want to delete. Unticked groups are kept.</p>
         <ul>
           @for (g of groups(); track g.key) {
@@ -40,6 +52,7 @@ import { trapModal } from '../dialog/modal-keys';
             Delete {{ pickedCount() }} {{ pickedCount() === 1 ? 'person' : 'people' }}
           </button>
         </div>
+        }
       </div>
     }
   `,
@@ -62,6 +75,7 @@ import { trapModal } from '../dialog/modal-keys';
     }
     h2 { font-family: var(--font-serif); font-size: 1.25rem; margin: 0; color: var(--ink); }
     .hint { margin: 0; font-size: 0.875rem; color: var(--ink-soft); }
+    .scan-line { margin: 0; font-size: 0.8125rem; color: var(--ink-soft); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
     ul { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 7px; }
     li + li { border-top: 1px solid var(--line); }
     label { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.7rem; cursor: pointer; }

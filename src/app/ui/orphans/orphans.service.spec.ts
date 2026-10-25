@@ -37,4 +37,17 @@ describe('OrphansService', () => {
     orphans.close();
     expect(orphans.reviewing()).toBe(false);
   });
+
+  it('scan() runs the check again and records how many people it checked and when', () => {
+    const before = orphans.groups();
+    orphans.scan();
+    expect(orphans.groups()).not.toBe(before); // evaluated again, not the cached result
+    expect(orphans.lastScan()?.people).toBe(3);
+    expect(orphans.lastScan()?.at).toBeInstanceOf(Date);
+  });
+
+  it('opening the review runs a scan', () => {
+    orphans.open();
+    expect(orphans.lastScan()?.people).toBe(3);
+  });
 });

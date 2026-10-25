@@ -2,7 +2,7 @@ import { Component, ElementRef, Injector, afterNextRender, computed, inject, sig
 import { trapModal } from '../dialog/modal-keys';
 import { TreeStore } from '../../core/tree-store/tree.store';
 import { fold, matchesTerms } from '../../core/search/search-util';
-import { relationship, traceLayout, TRACE_W, TRACE_H } from '../../core/relate/relate';
+import { relationship, traceLayout, withUnrecordedParents, TRACE_W, TRACE_H } from '../../core/relate/relate';
 import { Individual } from '../../core/model/types';
 
 type Slot = 'a' | 'b';
@@ -80,7 +80,7 @@ function yearsOf(p: Individual): string {
                   }
                 </svg>
                 @for (c of t.cards; track c.id) {
-                  @let p = byId().get(c.id);
+                  @let p = withStandIns().individuals.get(c.id);
                   <div class="card" [class.end]="c.id === chosen.a() || c.id === chosen.b()"
                     [style.left.px]="c.x" [style.top.px]="c.y" [style.width.px]="W" [style.height.px]="H">
                     @if (r.lca && (c.id === r.lca || c.partner)) { <span class="tag">common ancestor</span> }
@@ -174,6 +174,8 @@ export class CompareComponent {
 
   readonly byId = computed(() => new Map(this.store.individuals().map((i) => [i.id, i])));
   private readonly unionMap = computed(() => new Map(this.store.unions().map((u) => [u.id, u])));
+  // The chain can pass through a "Parents not recorded" stand-in (see withUnrecordedParents): draw it from the same maps.
+  protected readonly withStandIns = computed(() => withUnrecordedParents(this.byId(), this.unionMap()));
   private readonly folded = computed(() => this.store.individuals().map((i) => ({ i, key: fold(nameOf(i)) })));
 
   private search(q: string): Individual[] {
@@ -198,7 +200,7 @@ export class CompareComponent {
 
   readonly trace = computed(() => {
     const path = this.result()?.path ?? [];
-    return path.length > 1 ? traceLayout(path, this.store.unions()) : null;
+    return path.length > 1 ? traceLayout(path, [...this.withStandIns().unions.values()]) : null;
   });
 
   private readonly panel = viewChild<ElementRef<HTMLElement>>('panel');

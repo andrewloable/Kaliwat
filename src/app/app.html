@@ -6,8 +6,9 @@
 <app-orphans [banner]="false" />
 <footer class="app-footer">
   <span>Kaliwat v{{ version }}</span>
-  @if (orphans.total(); as n) {
+  @if (!store.isEmpty()) {
+    <!-- Always there with a tree, so the check can be run again any time (e.g. right after a trim). -->
     <span aria-hidden="true">·</span>
-    <button type="button" class="footer-link" (click)="orphans.open()">{{ n }} not connected</button>
+    <button type="button" class="footer-link" (click)="orphans.open()">{{ orphans.total() ? orphans.total() + ' not connected' : 'All connected' }}</button>
   }
 </footer>
