@@ -1,6 +1,6 @@
 import {
   Component, ViewChild, ElementRef, AfterViewInit, OnDestroy,
-  computed, signal, effect, inject,
+  computed, signal, effect, inject, Injector, afterNextRender, HostListener,
   ChangeDetectionStrategy
 } from '@angular/core';
 import { select } from 'd3-selection';
@@ -33,6 +33,11 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
   private readonly exportService = inject(ExportService);
 
   readonly focusId = signal<string | null>(null);
+  /** The person the drawing is centred on, named above it so the reader knows whose tree this view is around. */
+  readonly focusPerson = computed(() => {
+    const id = this.focusId();
+    return id ? this.store.individuals().find((i) => i.id === id) ?? null : null;
+  });
 
   // Search in tree mode is a "jump to person": matches surface in a dropdown,
   // and picking one focuses the tree on them.
@@ -48,6 +53,7 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
   selectResult(id: string): void {
     this.setFocus(id);
     this.search.query.set('');
+    this.search.open.set(false); // phones: the search over the top bar closes once a person is picked
     this.centerOnFocus();
   }
 
@@ -57,32 +63,37 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
     this.centerOnFocus();
   }
 
-  /** Pan (at current scale) so the focused person sits in the viewport centre. */
+  /** Pan (at scale 1) so the focused person sits in the viewport centre; with nobody focused, the drawing's corner. */
   private centerOnFocus(): void {
     if (!this.svgEl || !this.zoomBehavior) return;
-    const nodes = this.layout().nodes;
-    const focus = nodes.find((n) => n.isFocus);
-    if (!focus) { this.recenter(); return; }
     const svg = this.svgEl.nativeElement;
-    const rect = svg.getBoundingClientRect();
-    const tx = rect.width / 2 - (focus.x + CARD_W / 2);
-    const ty = rect.height / 2 - (focus.y + CARD_H / 2);
-    this.zoomBehavior.transform(
-      select<SVGSVGElement, unknown>(svg),
-      zoomIdentity.translate(tx, ty),
-    );
+    const focus = this.layout().nodes.find((n) => n.isFocus);
+    let t = zoomIdentity.translate(40, 40);
+    if (focus) {
+      const rect = svg.getBoundingClientRect();
+      t = zoomIdentity.translate(rect.width / 2 - (focus.x + CARD_W / 2), rect.height / 2 - (focus.y + CARD_H / 2));
+    }
+    this.zoomBehavior.transform(select<SVGSVGElement, unknown>(svg), t);
+    this.panned = false;
   }
 
   private zoomBehavior?: ZoomBehavior<SVGSVGElement, unknown>;
+  private readonly injector = inject(Injector);
+  private readonly host = inject(ElementRef);
+  // True once the reader drags, wheels or pinches; a resize then leaves their position alone.
+  private panned = false;
+  private resizeObserver?: ResizeObserver;
+  private resizeTimer?: ReturnType<typeof setTimeout>;
 
   // Auto-select first person when the tree loads, and re-select if the focused
-  // person goes away (e.g. was deleted).
+  // person goes away (e.g. was deleted); the new focus is centred once it is drawn.
   private readonly _autoFocus = effect(() => {
     const people = this.store.individuals();
     if (people.length === 0) return;
     const fid = this.focusId();
     if (!fid || !people.some((p) => p.id === fid)) {
       this.focusId.set(people[0].id);
+      afterNextRender(() => this.centerOnFocus(), { injector: this.injector });
     }
   });
 
@@ -104,6 +115,64 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
   /** Compact view: how many generations run top to bottom before the cascade starts. */
   readonly compactRows = signal(4);
 
+  // The layout choices: open in the toolbar row on wide screens, a popover under "View options" on phones.
+  @ViewChild('viewOptions') private viewOptionsEl?: ElementRef<HTMLDetailsElement>;
+  protected readonly viewOptionsOpen = !this.isPhone();
+
+  private isPhone(): boolean {
+    return typeof matchMedia === 'function' && !matchMedia('(min-width: 601px)').matches;
+  }
+
+  /** Pick a layout; on phones the popover closes, except for Compact, whose Rows setting is in it. */
+  chooseOrientation(o: 'horizontal' | 'vertical' | 'compact'): void {
+    this.familyOrientation.set(o);
+    if (o !== 'compact') this.closeViewOptions();
+  }
+
+  /** Close the phone popover (wide screens keep the choices in the row). Escape returns focus to its button. */
+  closeViewOptions(focusSummary = false): void {
+    const d = this.viewOptionsEl?.nativeElement;
+    if (!d?.open || !this.isPhone()) return;
+    d.open = false;
+    if (focusSummary) d.querySelector('summary')?.focus();
+  }
+
+  // Jump-to-person results from the keyboard: ArrowDown in the top-bar search field moves into them.
+  @HostListener('document:keydown', ['$event'])
+  onDocumentKey(e: KeyboardEvent): void {
+    const target = e.target as HTMLElement | null;
+    if (e.key !== 'ArrowDown' || !target?.classList.contains('search-field') || !this.searchMatches().length) return;
+    e.preventDefault();
+    this.resultButtons()[0]?.focus();
+  }
+
+  /** Up/Down move between results (wrapping), Escape clears the search and returns to the field. */
+  onResultsKey(e: KeyboardEvent): void {
+    const items = this.resultButtons();
+    const i = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      items[(i + step + items.length) % items.length]?.focus();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      this.search.query.set('');
+      document.querySelector<HTMLInputElement>('input.search-field')?.focus();
+    }
+  }
+
+  private resultButtons(): HTMLButtonElement[] {
+    return [...(this.host.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('.tsr-item')];
+  }
+
+  // A tap anywhere outside the phone popover closes it.
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(e: MouseEvent): void {
+    const d = this.viewOptionsEl?.nativeElement;
+    if (d?.open && !d.contains(e.target as Node)) this.closeViewOptions();
+  }
+
 
   ngAfterViewInit(): void {
     const svgNative = this.svgEl.nativeElement;
@@ -117,26 +186,38 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
         const r = svgNative.getBoundingClientRect();
         return [[0, 0], [r.width, r.height]];
       })
-      .on('zoom', e => { layer.setAttribute('transform', e.transform.toString()); });
+      .on('zoom', e => {
+        layer.setAttribute('transform', e.transform.toString());
+        // A change made by the reader (drag, wheel, pinch) carries the DOM event; our own centring does not.
+        if (e.sourceEvent) this.panned = true;
+      });
 
     svg.call(this.zoomBehavior);
     this.zoomBehavior.transform(svg, zoomIdentity.translate(40, 40));
     this.exportService.chart.set(layer); // the Export menu renders PDF/SVG/JPG from it
+
+    // The canvas can change size (window resize, rotation): centre again, unless the reader moved the drawing.
+    if (typeof ResizeObserver === 'function') {
+      this.resizeObserver = new ResizeObserver(() => {
+        clearTimeout(this.resizeTimer);
+        this.resizeTimer = setTimeout(() => { if (!this.panned) this.centerOnFocus(); }, 100);
+      });
+      this.resizeObserver.observe(svgNative);
+    }
   }
 
   ngOnDestroy(): void {
+    this.resizeObserver?.disconnect();
+    clearTimeout(this.resizeTimer);
     this.exportService.chart.set(null);
     if (this.svgEl) {
       select<SVGSVGElement, unknown>(this.svgEl.nativeElement).on('.zoom', null);
     }
   }
 
+  /** The Recenter button: back to the focused person (the drawing can be panned far away from them). */
   recenter(): void {
-    if (!this.svgEl || !this.zoomBehavior) return;
-    this.zoomBehavior.transform(
-      select<SVGSVGElement, unknown>(this.svgEl.nativeElement),
-      zoomIdentity.translate(40, 40),
-    );
+    this.centerOnFocus();
   }
 
   setFocus(id: string): void { this.focusId.set(id); }

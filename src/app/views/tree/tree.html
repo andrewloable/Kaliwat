@@ -1,33 +1,45 @@
 <div class="tree-container">
   <div class="tree-toolbar">
     @if (!store.isEmpty()) {
-      <button class="mode-btn orient-btn" [class.active]="familyOrientation() === 'horizontal'"
-        [attr.aria-pressed]="familyOrientation() === 'horizontal'" (click)="familyOrientation.set('horizontal')">→ Left to right</button>
-      <button class="mode-btn orient-btn" [class.active]="familyOrientation() === 'vertical'"
-        [attr.aria-pressed]="familyOrientation() === 'vertical'" (click)="familyOrientation.set('vertical')">↓ Top to bottom</button>
-      <button class="mode-btn orient-btn" [class.active]="familyOrientation() === 'compact'"
-        [attr.aria-pressed]="familyOrientation() === 'compact'" (click)="familyOrientation.set('compact')"
-        title="Top-to-bottom generations, then a waterfall of descendants">▦ Compact</button>
-      @if (familyOrientation() === 'compact') {
-        <label class="rows-setting">Rows
-          <select aria-label="Generations top to bottom" (change)="compactRows.set(+$any($event.target).value)">
-            @for (n of [1, 2, 3, 4, 5, 6]; track n) {
-              <option [value]="n" [selected]="n === compactRows()">{{ n }}</option>
-            }
-          </select>
-        </label>
-      }
+      <!-- Wide screens: open and laid out as if it were not there. Phones: a 44px button with the choices in a popover. -->
+      <details #viewOptions class="view-options" [open]="viewOptionsOpen" (keydown.escape)="closeViewOptions(true)">
+        <summary title="View options">
+          <svg class="btn-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
+          <span class="btn-label">View options</span>
+        </summary>
+        <div class="options-panel">
+          <button class="mode-btn orient-btn" [class.active]="familyOrientation() === 'horizontal'"
+            [attr.aria-pressed]="familyOrientation() === 'horizontal'" (click)="chooseOrientation('horizontal')">→ Left to right</button>
+          <button class="mode-btn orient-btn" [class.active]="familyOrientation() === 'vertical'"
+            [attr.aria-pressed]="familyOrientation() === 'vertical'" (click)="chooseOrientation('vertical')">↓ Top to bottom</button>
+          <button class="mode-btn orient-btn" [class.active]="familyOrientation() === 'compact'"
+            [attr.aria-pressed]="familyOrientation() === 'compact'" (click)="chooseOrientation('compact')"
+            title="Top-to-bottom generations, then a waterfall of descendants">▦ Compact</button>
+          @if (familyOrientation() === 'compact') {
+            <label class="rows-setting">Rows
+              <select aria-label="Generations top to bottom" (change)="compactRows.set(+$any($event.target).value); closeViewOptions()">
+                @for (n of [1, 2, 3, 4, 5, 6]; track n) {
+                  <option [value]="n" [selected]="n === compactRows()">{{ n }}</option>
+                }
+              </select>
+            </label>
+          }
+        </div>
+      </details>
     }
-    <button class="recenter-btn" title="Recenter" (click)="recenter()">⊙ Recenter</button>
+    <button class="recenter-btn" title="Recenter" aria-label="Recenter" (click)="recenter()"><span aria-hidden="true">⊙</span><span class="btn-label"> Recenter</span></button>
+    @if (focusPerson(); as fp) {
+      <span class="focus-name-bar" aria-live="polite">Centred on <strong>{{ displayName(fp) }}</strong></span>
+    }
   </div>
 
   @if (search.query().trim()) {
-    <div class="tree-search-panel" role="listbox" aria-label="Search results">
+    <div class="tree-search-panel" role="region" aria-label="Search results" (keydown)="onResultsKey($event)">
       @if (searchMatches().length) {
         <ul class="tree-search-results">
           @for (m of searchMatches(); track m.id) {
             <li>
-              <button type="button" class="tsr-item" role="option" (click)="selectResult(m.id)">
+              <button type="button" class="tsr-item" (click)="selectResult(m.id)">
                 <span class="tsr-name">{{ m.name }}</span>
                 <span class="tsr-years">{{ m.years }}</span>
               </button>
@@ -40,6 +52,10 @@
     </div>
   }
 
+  <div class="tree-body">
+  @if (focusPerson(); as fp) {
+    <span class="focus-name" aria-live="polite">Centred on <strong>{{ displayName(fp) }}</strong></span>
+  }
   <svg #svgEl class="tree-svg" aria-label="Family tree diagram">
     <g #chartLayer>
         @for (edge of layout().edges; track edge.id) {
@@ -97,6 +113,8 @@
                [attr.aria-label]="'Edit ' + displayName(node.person)"
                (click)="editor.open(node.person.id); $event.stopPropagation()"
                (keydown.enter)="editor.open(node.person.id); $event.stopPropagation()">
+              <!-- The visible button is 26x20; this invisible square makes the tap target 44x44. -->
+              <rect class="hit" [attr.x]="CARD_W - 44" y="0" width="44" height="44" fill="transparent" pointer-events="all"/>
               <rect [attr.x]="CARD_W - 32" y="6" width="26" height="20" rx="6" fill="var(--paper-2)"/>
               <text [attr.x]="CARD_W - 19" y="20" text-anchor="middle" font-size="12" fill="var(--ink-soft)">✎</text>
             </g>
@@ -109,6 +127,7 @@
         }
     </g>
   </svg>
+  </div>
 
   <app-person-editor #editor />
 </div>

@@ -63,6 +63,10 @@
   }
 }
 
+// The compact view's Rows select: 1rem like every text field (iOS zooms on smaller ones).
+.rows-setting { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.875rem; color: var(--ink-soft); }
+.rows-setting select { font-size: 1rem; }
+
 .recenter-btn {
   margin-left: auto;
   flex-shrink: 0;
@@ -74,6 +78,91 @@
   color: var(--ink-soft);
   font-size: 0.875rem;
   cursor: pointer;
+}
+
+// Layout choices. Wide screens: the details wrapper and its panel disappear, so the buttons sit in the toolbar row.
+.view-options { display: contents; }
+.view-options > summary { display: none; list-style: none; cursor: pointer; }
+// A closed details (loaded on a phone, then made wide) keeps its summary, or the choices would be lost.
+.view-options:not([open]) > summary { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--ink-soft); }
+// Its own flex row: Chrome wraps details content in an internal box, so the toolbar's gap would not reach the buttons.
+.options-panel { display: flex; align-items: center; gap: 0.5rem; }
+.btn-icon { display: none; }
+
+
+// Who the drawing is centred on: in the toolbar on wide screens, a chip over the canvas on phones
+// (only the visible one is announced; display: none takes the other out of the accessibility tree).
+.focus-name-bar {
+  flex-shrink: 0;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+
+  strong { color: var(--ink); font-weight: 600; }
+}
+
+.focus-name { display: none; }
+
+@media (max-width: 600px) {
+  .focus-name-bar { display: none; }
+
+  // The toolbar fits a phone: layout choices in a popover under a 44px "View options" button, Recenter as an icon.
+  .tree-toolbar { position: relative; overflow: visible; }
+  .view-options { display: block; flex: 0 0 auto; }
+  .view-options > summary,
+  .view-options:not([open]) > summary {
+    display: flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; padding: 0;
+    border: 1px solid var(--line); border-radius: 6px; color: var(--ink-soft);
+  }
+  .view-options > summary::-webkit-details-marker { display: none; }
+  .view-options[open] > summary { background: var(--paper-2); color: var(--ink); }
+  .btn-icon { display: block; }
+  .btn-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .view-options[open] > .options-panel {
+    display: flex; flex-direction: column; gap: 0.5rem;
+    position: absolute; top: 100%; left: 1rem; right: 1rem; z-index: 30;
+    padding: 0.75rem; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--card); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  }
+  .view-options:not([open]) > .options-panel { display: none; }
+  .options-panel .mode-btn { min-height: 44px; text-align: left; font-size: 1rem; }
+  .rows-setting { min-height: 44px; display: flex; align-items: center; gap: 0.5rem; }
+  .recenter-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; padding: 0; font-size: 1.1rem;
+  }
+
+  .focus-name {
+    display: block;
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 5;
+    max-width: calc(100% - 1rem);
+    box-sizing: border-box;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--card) 88%, transparent);
+    border: 1px solid var(--line);
+    color: var(--ink-soft);
+    font-size: 0.8125rem;
+    pointer-events: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    strong { color: var(--ink); font-weight: 600; }
+  }
+}
+
+// Holds the drawing and the phone chip that floats over it.
+.tree-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
 }
 
 .tree-svg {

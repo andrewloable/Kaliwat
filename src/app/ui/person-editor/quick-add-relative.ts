@@ -103,7 +103,7 @@ type Sex = 'M' | 'F' | 'U';
     label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.8125rem; color: var(--ink-soft); }
     .field-input {
       min-width: 0; padding: 0.4rem 0.6rem; border: 1px solid var(--line); border-radius: 6px;
-      background: var(--paper-2); font-size: 0.9375rem; color: var(--ink);
+      background: var(--paper-2); font-size: 1rem; color: var(--ink);
       &:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
     }
     .sex { display: flex; gap: 0.5rem; border: none; margin: 0; padding: 0; }
@@ -139,6 +139,10 @@ type Sex = 'M' | 'F' | 'U';
       padding: 0.5rem 1.25rem; background: var(--accent); color: #fff; border: none; border-radius: 7px;
       font-size: 0.9375rem; cursor: pointer;
       &:disabled { opacity: .5; cursor: default; }
+    }
+    /* Touch targets: every button in the form is at least 44px tall (DESIGN.md). */
+    .rel-btn, .delete-link, .cancel-btn, .save-btn {
+      min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;
     }
   `],
 })

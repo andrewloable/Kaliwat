@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ElementRef, HostListener, Injector, afterNextRender, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { ExportService } from '../../export/export.service';
 import type { PageFormat } from '../../export/chart-export';
 
@@ -13,8 +13,8 @@ const LABEL: Record<Kind, string> = { file: 'file', pdf: 'PDF', svg: 'SVG', jpg:
   selector: 'app-export-menu',
   template: `
     @if (isOpen()) {
-      <div class="menu-backdrop" (click)="close()" aria-hidden="true"></div>
-      <div class="menu" role="group" aria-label="Export options" (keydown.escape)="close()">
+      <div class="menu-backdrop" (click)="close(true)" aria-hidden="true"></div>
+      <div class="menu" role="group" aria-label="Export options">
         <button type="button" class="item" [disabled]="!!busy()" (click)="run('file')">
           <span class="title">Family tree file</span>
           <span class="hint">.gdz with photos, else .ged</span>
@@ -83,7 +83,7 @@ const LABEL: Record<Kind, string> = { file: 'file', pdf: 'PDF', svg: 'SVG', jpg:
     .pdf-row { display: flex; align-items: center; gap: 0.4rem; }
     select {
       padding: 0.25rem 0.4rem; border: 1px solid var(--line); border-radius: 6px;
-      background: var(--paper); color: var(--ink); font-size: 0.8125rem;
+      background: var(--paper); color: var(--ink); font-size: 1rem;
     }
     .note { margin: 0.25rem 0.65rem; font-size: 0.8125rem; color: var(--ink-soft); }
     .error { color: #a23b2d; }
@@ -91,6 +91,10 @@ const LABEL: Record<Kind, string> = { file: 'file', pdf: 'PDF', svg: 'SVG', jpg:
 })
 export class ExportMenuComponent {
   protected readonly exportService = inject(ExportService);
+  private readonly host = inject(ElementRef<HTMLElement>);
+  private readonly injector = inject(Injector);
+  // The button that opened the menu: Escape and an outside click give focus back to it.
+  private opener: HTMLElement | null = null;
 
   readonly isOpen = signal(false);
   readonly busy = signal<string | null>(null);
@@ -100,11 +104,22 @@ export class ExportMenuComponent {
 
   toggle(): void {
     this.error.set(null);
-    this.isOpen.update((v) => !v);
+    if (this.isOpen()) return this.close();
+    this.opener = document.activeElement as HTMLElement | null;
+    this.isOpen.set(true);
+    afterNextRender(() => (this.host.nativeElement as HTMLElement).querySelector<HTMLElement>('.menu button:not([disabled])')?.focus(), { injector: this.injector });
   }
 
-  close(): void {
+  close(restoreFocus = false): void {
     this.isOpen.set(false);
+    if (restoreFocus) this.opener?.focus();
+    this.opener = null;
+  }
+
+  // Escape closes the menu wherever focus is (it is not modal, so focus may have left it).
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    if (this.isOpen()) this.close(true);
   }
 
   async run(kind: Kind): Promise<void> {

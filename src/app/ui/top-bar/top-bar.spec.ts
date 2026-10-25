@@ -53,4 +53,26 @@ describe('TopBarComponent', () => {
     const input: HTMLInputElement = fixture.nativeElement.querySelector('.search-field');
     expect(input.value).toBe('reyes');
   });
+
+  it('phone search: openSearch shows the overlay, closeSearch hides it and keeps the query', () => {
+    const search = TestBed.inject(SearchService);
+    const fixture = TestBed.createComponent(TopBarComponent);
+    fixture.detectChanges();
+    const slot = () => fixture.nativeElement.querySelector('.search-slot') as HTMLElement;
+    const toggle = () => fixture.nativeElement.querySelector('.search-toggle') as HTMLButtonElement;
+    expect(slot().classList.contains('open')).toBe(false);
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+
+    fixture.componentInstance.openSearch();
+    fixture.detectChanges();
+    expect(search.open()).toBe(true); // shared, so the tree can close it after a pick
+    expect(slot().classList.contains('open')).toBe(true);
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+
+    search.query.set('maria');
+    fixture.componentInstance.closeSearch();
+    fixture.detectChanges();
+    expect(slot().classList.contains('open')).toBe(false);
+    expect(search.query()).toBe('maria');
+  });
 });

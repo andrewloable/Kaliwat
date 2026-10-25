@@ -3,6 +3,7 @@
 }
 
 .top-bar {
+  position: relative; /* the phone search opens over the bar */
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -19,6 +20,23 @@
   color: var(--ink);
   letter-spacing: -0.01em;
   flex-shrink: 0;
+}
+
+/* Phone-only controls; the @media block at the end shows them. */
+.search-toggle,
+.search-close {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
 }
 
 .search-slot {
@@ -44,7 +62,7 @@
   border: 1px solid var(--line);
   border-radius: 8px;
   font-family: var(--font-sans);
-  font-size: 0.9375rem;
+  font-size: 1rem;
   color: var(--ink);
   outline: none;
 
@@ -150,8 +168,25 @@
     padding: 0 0.75rem;
     gap: 0.5rem;
   }
+  // The field has no room here: a 44px button opens it over the whole bar instead.
+  .search-toggle {
+    display: inline-flex;
+  }
   .search-slot {
+    display: none;
     min-width: 0;
+  }
+  .search-slot.open {
+    display: flex;
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    max-width: none;
+    gap: 0.5rem;
+    padding: 0 0.75rem;
+    background: var(--paper);
+    .search-icon { left: 1.375rem; }
+    .search-close { display: inline-flex; }
   }
   // The footer carries the name on phones; the room goes to the tool buttons.
   .wordmark {

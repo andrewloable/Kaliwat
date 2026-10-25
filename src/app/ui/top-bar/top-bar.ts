@@ -1,4 +1,4 @@
-import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ElementRef, Injector, afterNextRender, inject, viewChild, ChangeDetectionStrategy } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { SearchService } from '../../core/search/search.service';
 import { TreeStore } from '../../core/tree-store/tree.store';
@@ -17,6 +17,20 @@ export class TopBarComponent {
   readonly search = inject(SearchService);
   readonly store = inject(TreeStore);
   private readonly importService = inject(ImportService);
+  private readonly injector = inject(Injector);
+  private readonly field = viewChild<ElementRef<HTMLInputElement>>('q');
+  private readonly toggle = viewChild<ElementRef<HTMLButtonElement>>('searchToggle');
+
+  openSearch(): void {
+    this.search.open.set(true);
+    afterNextRender(() => this.field()?.nativeElement.focus(), { injector: this.injector });
+  }
+
+  /** Close the phone search; the query stays, so the filtered list stays. */
+  closeSearch(): void {
+    this.search.open.set(false);
+    afterNextRender(() => this.toggle()?.nativeElement.focus(), { injector: this.injector });
+  }
 
   onImport(e: Event): void {
     const input = e.target as HTMLInputElement;

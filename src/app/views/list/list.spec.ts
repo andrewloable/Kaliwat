@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { ListComponent } from './list';
+import { ListComponent, yearsLabel } from './list';
 import { TreeStore } from '../../core/tree-store/tree.store';
 import { ImportService } from '../../core/import/import.service';
 import { SearchService } from '../../core/search/search.service';
@@ -111,5 +111,52 @@ describe('ListComponent', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.no-results')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('.empty-state')).toBeNull();
+  });
+
+  function withReport(warnings: string[]) {
+    store.setIndividuals([makeIndi('a', 'Ana Reyes')]);
+    store.importStatus.set({ kind: 'success', treeId: 't', total: 1, skipped: warnings.length, warnings });
+    const fixture = TestBed.createComponent(ListComponent);
+    fixture.detectChanges();
+    const details = () => [...fixture.nativeElement.querySelectorAll('button')].find((b) => (b as HTMLElement).textContent!.trim() === 'View details') as HTMLButtonElement | undefined;
+    const items = () => [...fixture.nativeElement.querySelectorAll('.import-warnings li')].map((li) => (li as HTMLElement).textContent!.trim());
+    return { fixture, details, items };
+  }
+
+  it('shows the skipped-line details on request', () => {
+    const { fixture, details, items } = withReport(['Line 5: bad tag', 'Line 9: bad date']);
+    expect(details()).toBeTruthy();
+    expect(details()!.getAttribute('aria-expanded')).toBe('false');
+    expect(items()).toEqual([]);
+    details()!.click();
+    fixture.detectChanges();
+    expect(details()!.getAttribute('aria-expanded')).toBe('true');
+    expect(items()).toEqual(['Line 5: bad tag', 'Line 9: bad date']);
+  });
+
+  it('caps the details at 50 lines with a remainder line', () => {
+    const { fixture, details, items } = withReport(Array.from({ length: 60 }, (_, i) => `Line ${i + 1}: bad`));
+    details()!.click();
+    fixture.detectChanges();
+    expect(items()).toHaveLength(51);
+    expect(items()[50]).toBe('and 10 more');
+  });
+
+  it('a person with no years gets no years label (so no lone dash)', () => {
+    store.setIndividuals([makeIndi('a', 'No Dates'), makeIndi('b', 'Has Dates', '1919', '1984')]);
+    const fixture = TestBed.createComponent(ListComponent);
+    fixture.detectChanges();
+    const byName = (n: string) => fixture.componentInstance.rows().find((r) => r.displayName === n)!;
+    expect(byName('No Dates').yearsLabel).toBeNull();
+    expect(byName('Has Dates').yearsLabel).toBe('Born 1919, died 1984');
+  });
+});
+
+describe('yearsLabel', () => {
+  it('reads naturally for each combination', () => {
+    expect(yearsLabel('1919', '1984')).toBe('Born 1919, died 1984');
+    expect(yearsLabel('1949', '')).toBe('Born 1949');
+    expect(yearsLabel('', '2010')).toBe('Died 2010');
+    expect(yearsLabel('', '')).toBeNull();
   });
 });

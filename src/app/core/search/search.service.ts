@@ -8,4 +8,6 @@ import { Injectable, signal } from '@angular/core';
 @Injectable({ providedIn: 'root' })
 export class SearchService {
   readonly query = signal('');
+  /** Phones: whether the search field is open over the top bar (wide screens always show it). */
+  readonly open = signal(false);
 }

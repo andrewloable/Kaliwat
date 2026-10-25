@@ -1,4 +1,5 @@
-import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ElementRef, Injector, afterNextRender, computed, inject, signal, viewChild, ChangeDetectionStrategy } from '@angular/core';
+import { trapModal } from '../dialog/modal-keys';
 import { TreeStore } from '../../core/tree-store/tree.store';
 import { fold, matchesTerms } from '../../core/search/search-util';
 import { relationship, traceLayout, TRACE_W, TRACE_H } from '../../core/relate/relate';
@@ -27,7 +28,7 @@ function yearsOf(p: Individual): string {
   template: `
     @if (isOpen()) {
       <div class="backdrop" (click)="close()" aria-hidden="true"></div>
-      <div class="panel" role="dialog" aria-modal="true" aria-labelledby="cmp-title">
+      <div #panel class="panel" role="dialog" aria-modal="true" aria-labelledby="cmp-title">
         <h2 id="cmp-title">How are they related?</h2>
         <div class="pickers">
           @for (slot of slots; track slot) {
@@ -111,7 +112,7 @@ function yearsOf(p: Individual): string {
     .picker-label { font-size: 0.75rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
     .field {
       padding: 0.4rem 0.6rem; border: 1px solid var(--line); border-radius: 6px;
-      background: var(--paper-2); font-size: 0.9375rem; color: var(--ink);
+      background: var(--paper-2); font-size: 1rem; color: var(--ink);
     }
     .chosen {
       display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.4rem 0.6rem; text-align: left;
@@ -200,11 +201,22 @@ export class CompareComponent {
     return path.length > 1 ? traceLayout(path, this.store.unions()) : null;
   });
 
+  private readonly panel = viewChild<ElementRef<HTMLElement>>('panel');
+  private readonly injector = inject(Injector);
+  private releaseModal?: () => void;
+
   open(): void {
     this.isOpen.set(true);
+    // Once drawn: focus moves into the dialog, Tab stays inside, Escape closes it.
+    afterNextRender(() => {
+      const el = this.panel()?.nativeElement;
+      if (el && !this.releaseModal) this.releaseModal = trapModal(el, () => this.close());
+    }, { injector: this.injector });
   }
 
   close(): void {
+    this.releaseModal?.();
+    this.releaseModal = undefined;
     this.isOpen.set(false);
   }
 

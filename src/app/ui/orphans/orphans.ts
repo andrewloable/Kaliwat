@@ -44,10 +44,13 @@ import { EditService, orphanGroups } from '../../core/edit/edit.service';
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .orphan-banner {
-      padding: 0.5rem 1.25rem; background: var(--paper-2); border-bottom: 1px solid var(--line);
+      padding: 0.125rem 1.25rem; background: var(--paper-2); border-bottom: 1px solid var(--line); /* the 44px buttons give the height */
       font-size: 0.875rem; color: var(--ink-soft); display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;
     }
-    .link-btn { background: none; border: none; padding: 0; cursor: pointer; color: var(--accent); text-decoration: underline; font-size: inherit; }
+    .link-btn {
+      background: none; border: none; padding: 0 0.25rem; cursor: pointer; color: var(--accent); text-decoration: underline; font-size: inherit;
+      display: inline-flex; align-items: center; min-height: 44px; /* touch target */
+    }
     .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.32); z-index: 100; }
     .panel {
       position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 101;

@@ -3,9 +3,11 @@ import { FormsModule } from '@angular/forms';
 import { TreeStore } from '../../core/tree-store/tree.store';
 import { EditService, PersonFormData, trimSet, TrimSide, validateFact, FACT_KINDS, FactKind } from '../../core/edit/edit.service';
 import { PhotoCropComponent } from '../photo-crop/photo-crop';
+import { trapModal } from '../dialog/modal-keys';
 import { QuickAddRelativeComponent } from './quick-add-relative';
 import type { RelativeKind } from '../../core/edit/relative-defaults';
 import { MediaService } from '../../media/media.service';
+import { ExportService } from '../../export/export.service';
 import { MAX_MEDIA_BYTES } from '../../gedcom/gedzip/gedzip';
 import { Individual, GedcomNode, GedcomEvent } from '../../core/model/types';
 import { LIFE_EVENT_TYPES, lifeEventLabel } from '../../core/model/life-events';
@@ -98,6 +100,9 @@ function indi2form(indi: Individual): PersonFormData {
  * Shared add/edit-person dialog. Hosted by both the list and the tree so a
  * person can be edited from either view. Call open('new') or open(personId).
  */
+/** Trims that delete at least this many people prompt for a backup download first. */
+const BIG_DELETE = 20;
+
 @Component({
   selector: 'app-person-editor',
   imports: [FormsModule, PhotoCropComponent, QuickAddRelativeComponent],
@@ -352,11 +357,21 @@ function indi2form(indi: Individual): PersonFormData {
                 <summary>Trim branch</summary>
                 <div class="section-body connect-picker">
               @if (confirmingTrim(); as t) {
-                <span class="confirm-text">
-                  Trim {{ t.side }}: delete {{ t.count }} {{ t.count === 1 ? 'person' : 'people' }} permanently?
-                </span>
+                @if (t.count >= BIG_DELETE) {
+                  <span class="confirm-text">
+                    Trim {{ t.side }}: this deletes {{ t.count }} people from this browser. Download a backup first?
+                  </span>
+                  <div class="relatives">
+                    <button type="button" class="rel-btn" (click)="backup()">Download backup</button>
+                    @if (backedUp()) { <span class="confirm-text" role="status">Backup downloaded</span> }
+                  </div>
+                } @else {
+                  <span class="confirm-text">
+                    Trim {{ t.side }}: delete {{ t.count }} {{ t.count === 1 ? 'person' : 'people' }} permanently?
+                  </span>
+                }
                 <div class="relatives">
-                  <button type="button" class="confirm-delete" (click)="trim(t.side)">Trim</button>
+                  <button type="button" class="confirm-delete" (click)="trim(t.side)">{{ t.count >= BIG_DELETE ? 'Delete ' + t.count + ' people' : 'Trim' }}</button>
                   <button type="button" class="keep-btn" (click)="confirmingTrim.set(null)">Cancel</button>
                 </div>
               } @else {
@@ -429,6 +444,14 @@ function indi2form(indi: Individual): PersonFormData {
       min-height: 44px; display: flex; align-items: center; cursor: pointer;
       font-size: 0.75rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .05em; font-weight: 600;
     }
+    /* display: flex drops the native disclosure triangle, so draw a chevron that turns when the section opens. */
+    .section summary::-webkit-details-marker { display: none; }
+    .section summary::after {
+      content: ''; flex-shrink: 0; margin: 0 0.25rem 0 auto; width: 0.45rem; height: 0.45rem;
+      border-right: 2px solid var(--ink-soft); border-bottom: 2px solid var(--ink-soft);
+      transform: rotate(45deg) translateY(-2px); transition: transform 150ms ease-out;
+    }
+    .section[open] > summary::after { transform: rotate(-135deg) translateY(-2px); }
     .section-body { display: flex; flex-direction: column; gap: 0.75rem; padding-bottom: 0.75rem; }
     .panel-footer {
       position: sticky; bottom: 0; z-index: 1; background: var(--paper);
@@ -441,7 +464,7 @@ function indi2form(indi: Individual): PersonFormData {
       min-width: 0;
       padding: 0.4rem 0.6rem; border: 1px solid var(--line);
       border-radius: 6px; background: var(--paper-2);
-      font-size: 0.9375rem; color: var(--ink);
+      font-size: 1rem; color: var(--ink);
       &:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
     }
     .field-textarea { resize: vertical; min-height: 72px; font-family: var(--font-sans); }
@@ -523,12 +546,18 @@ function indi2form(indi: Individual): PersonFormData {
       font-size: 0.9375rem; cursor: pointer;
       &:hover { filter: brightness(1.08); }
     }
+    /* Touch targets: every button in the panel is at least 44px tall (DESIGN.md). */
+    .rel-btn, .delete-link, .confirm-delete, .keep-btn, .cancel-btn, .save-btn {
+      min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;
+    }
+    .connect-item { min-height: 44px; align-items: center; }
   `],
 })
 export class PersonEditorComponent {
   private readonly store = inject(TreeStore);
   private readonly editService = inject(EditService);
   protected readonly media = inject(MediaService);
+  private readonly exporter = inject(ExportService);
 
   /** The person's primary photo as a local object URL, or null. */
   readonly photoUrl = computed(() => {
@@ -552,6 +581,8 @@ export class PersonEditorComponent {
   private fbOriginal = '';
   private readonly panel = viewChild<ElementRef<HTMLElement>>('panel');
   private readonly injector = inject(Injector);
+  // Undoes the modal keys (focus, Tab wrap, Escape) set up when the panel opened.
+  private releaseModal?: () => void;
   form: PersonFormData = blankForm();
 
   // Add-a-fact form (email, phone, website, social links).
@@ -618,6 +649,9 @@ export class PersonEditorComponent {
       .filter((t) => t.count > 0);
   });
   readonly confirmingTrim = signal<{ side: TrimSide; count: number } | null>(null);
+  // A trim this big asks for a backup first: the deleted people are gone from this browser for good.
+  protected readonly BIG_DELETE = BIG_DELETE;
+  readonly backedUp = signal(false);
 
   // The person's family links, each removable: their parents' family, partners, children.
   readonly relations = computed(() => {
@@ -654,6 +688,7 @@ export class PersonEditorComponent {
   /** Open the dialog to add a new person ('new') or edit an existing one (id). */
   open(target: 'new' | string): void {
     this.error.set(null);
+    this.backedUp.set(false);
     this.confirmingDelete.set(false);
     this.confirmingTrim.set(null);
     this.connectKind.set(null);
@@ -664,6 +699,7 @@ export class PersonEditorComponent {
     if (target === 'new') {
       this.form = blankForm();
       this.state.set('new');
+      this.armModal();
       return;
     }
     const indi = this.store.individuals().find((i) => i.id === target);
@@ -674,9 +710,22 @@ export class PersonEditorComponent {
     this.facebook.set(this.fbOriginal);
     this.form = indi2form(indi);
     this.state.set(target);
+    this.armModal();
+  }
+
+  /** Once the panel is drawn: focus moves into it, Tab stays inside, Escape closes it. Already set up while it stays open. */
+  private armModal(): void {
+    if (this.releaseModal) return;
+    afterNextRender(() => {
+      const el = this.panel()?.nativeElement;
+      if (el && !this.releaseModal) this.releaseModal = trapModal(el, () => this.close());
+    }, { injector: this.injector });
   }
 
   close(): void {
+    this.releaseModal?.();
+    this.releaseModal = undefined;
+    this.backedUp.set(false);
     this.quickAdd.set(null);
     this.cropFile.set(null);
     this.confirmingDelete.set(false);
@@ -692,6 +741,12 @@ export class PersonEditorComponent {
     if (id === 'closed' || id === 'new') return;
     this.editService.deleteIndividual(id);
     this.close();
+  }
+
+  /** Download the whole tree (.gdz or .ged) before a big trim. */
+  async backup(): Promise<void> {
+    await this.exporter.export();
+    this.backedUp.set(true);
   }
 
   /** Delete the edited person's ancestors or descendants side. */

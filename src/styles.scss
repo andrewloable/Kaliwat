@@ -11,6 +11,8 @@
 
   --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --font-sans:  "Avenir Next", "Segoe UI", Helvetica, Arial, sans-serif;
+
+  accent-color: var(--accent); /* radios, checkboxes: the one accent, not browser blue */
 }
 
 *,
@@ -36,6 +38,26 @@ body {
 :focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
+}
+
+/* Form controls do not inherit the page font by default (they fall back to Arial at 13px). Text fields set
+   their own size of at least 1rem: below 16px iOS Safari zooms the page when one is focused. */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+h1,
+h2 {
+  text-wrap: balance;
+}
+
+/* A dialog container takes focus when it opens (so Tab starts inside it); it is not a control, so no ring. */
+[role="dialog"][tabindex="-1"]:focus {
+  outline: none;
 }
 
 /* Screen-reader-only: gives each view a heading in the document outline

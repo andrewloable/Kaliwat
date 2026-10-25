@@ -1,4 +1,4 @@
-import { Component, computed, inject, ViewChild, ChangeDetectionStrategy } from '@angular/core';
+import { Component, computed, inject, signal, ViewChild, ChangeDetectionStrategy } from '@angular/core';
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { TreeStore } from '../../core/tree-store/tree.store';
 import { ImportService } from '../../core/import/import.service';
@@ -16,9 +16,19 @@ export interface ListRow {
   subtitle: string;
   birthYear: string;
   deathYear: string;
+  /** What a screen reader hears for the years; null when neither is known (and nothing is shown). */
+  yearsLabel: string | null;
   sortKey: string;
   searchKey: string;
   mediaId?: string;
+}
+
+/** "Born 1919, died 1984", "Born 1949", "Died 2010", or null when neither year is known. */
+export function yearsLabel(birthYear: string, deathYear: string): string | null {
+  if (birthYear && deathYear) return `Born ${birthYear}, died ${deathYear}`;
+  if (birthYear) return `Born ${birthYear}`;
+  if (deathYear) return `Died ${deathYear}`;
+  return null;
 }
 
 function toRow(indi: Individual): ListRow {
@@ -40,7 +50,7 @@ function toRow(indi: Individual): ListRow {
   const subtitle = birth?.place ?? '';
   const sortKey = `${n0?.surname ?? ''} ${n0?.given ?? name}`.trim().toLowerCase();
 
-  return { id: indi.id, displayName: name || '(no name)', initials, subtitle, birthYear, deathYear, sortKey, searchKey: fold(name), mediaId: indi.mediaIds[0] };
+  return { id: indi.id, displayName: name || '(no name)', initials, subtitle, birthYear, deathYear, yearsLabel: yearsLabel(birthYear, deathYear), sortKey, searchKey: fold(name), mediaId: indi.mediaIds[0] };
 }
 
 @Component({
@@ -57,8 +67,15 @@ function toRow(indi: Individual): ListRow {
         @if (status.kind === 'success' && status.skipped > 0) {
           <div class="import-report" role="status">
             Imported {{ status.total }} people · {{ status.skipped }} lines skipped.
+            <button class="report-dismiss" [attr.aria-expanded]="showReport()" (click)="showReport.set(!showReport())">View details</button>
             <button class="report-dismiss" (click)="dismissReport()">Dismiss</button>
           </div>
+          @if (showReport()) {
+            <ul class="import-warnings">
+              @for (w of status.warnings.slice(0, REPORT_CAP); track $index) { <li>{{ w }}</li> }
+              @if (status.warnings.length > REPORT_CAP) { <li>and {{ status.warnings.length - REPORT_CAP }} more</li> }
+            </ul>
+          }
         }
       }
 
@@ -97,10 +114,12 @@ function toRow(indi: Individual): ListRow {
           <div
             *cdkVirtualFor="let row of filtered(); trackBy: trackById"
             class="list-row"
+            role="button"
             tabindex="0"
             [attr.aria-label]="row.displayName"
             (click)="editor.open(row.id)"
             (keydown.enter)="editor.open(row.id)"
+            (keydown.space)="$event.preventDefault(); editor.open(row.id)"
           >
             @let photo = media.avatar(store.currentTreeId(), row.mediaId)();
             @if (photo) {
@@ -118,9 +137,11 @@ function toRow(indi: Individual): ListRow {
             @if (gen) {
               <span class="row-gen" [attr.aria-label]="'Generation ' + gen">Gen {{ gen }}</span>
             }
-            <span class="row-years" aria-label="Born {{ row.birthYear }} died {{ row.deathYear }}">
-              {{ row.birthYear }}<span class="year-sep">–</span>{{ row.deathYear }}
-            </span>
+            @if (row.yearsLabel) {
+              <span class="row-years" [attr.aria-label]="row.yearsLabel">
+                {{ row.birthYear }}<span class="year-sep">–</span>{{ row.deathYear }}
+              </span>
+            }
           </div>
         </cdk-virtual-scroll-viewport>
         <button class="add-person-btn" type="button" (click)="editor.open('new')" aria-label="Add person">+</button>
@@ -135,7 +156,8 @@ function toRow(indi: Individual): ListRow {
   styles: [`
     .list-shell { display: flex; flex-direction: column; height: calc(100vh - 56px - var(--footer-h)); position: relative; }
 
-    .scroll-viewport { flex: 1; height: calc(100vh - 56px - var(--footer-h)); }
+    /* Room at the end so the last row scrolls clear of the + button (52px + its 1.5rem offset + a gap). */
+    .scroll-viewport { flex: 1; height: calc(100vh - 56px - var(--footer-h)); padding-bottom: 88px; box-sizing: border-box; }
 
     .importing-state {
       padding: 0.5rem 1.25rem;
@@ -147,13 +169,20 @@ function toRow(indi: Individual): ListRow {
 
     .import-report {
       display: flex; align-items: center; gap: 1rem;
-      padding: 0.5rem 1.25rem;
+      padding: 0.125rem 1.25rem; /* the 44px buttons give the height */
       background: #f3ead8;
       border-bottom: 1px solid var(--line);
       font-size: 0.875rem; color: var(--ink);
     }
+    .report-dismiss + .report-dismiss { margin-left: 0; }
+    .import-warnings {
+      margin: 0; padding: 0.5rem 1.25rem 0.75rem 2.5rem; max-height: 40vh; overflow-y: auto;
+      background: #f3ead8; border-bottom: 1px solid var(--line);
+      font-size: 0.875rem; color: var(--ink-soft); overflow-wrap: anywhere;
+    }
     .report-dismiss {
-      margin-left: auto; background: transparent; border: none;
+      margin-left: auto; background: transparent; border: none; white-space: nowrap;
+      display: inline-flex; align-items: center; min-height: 44px; padding: 0 0.25rem; /* touch target */
       font-size: 0.8125rem; color: var(--ink-soft); cursor: pointer;
       text-decoration: underline;
     }
@@ -224,8 +253,9 @@ function toRow(indi: Individual): ListRow {
     .format-hint { font-size: 0.875rem; color: var(--ink-soft); margin: 0; }
     .try-sample { font-size: 0.875rem; color: var(--ink-soft); margin: 0; }
     .sample-link {
-      background: transparent; border: none; padding: 0;
+      background: transparent; border: none; padding: 0 0.25rem;
       color: var(--accent); cursor: pointer; text-decoration: underline; font-size: inherit;
+      display: inline-flex; align-items: center; min-height: 44px; /* touch target */
     }
     .divider { width: 100%; border: none; border-top: 1px solid var(--line); margin: 0.25rem 0; }
     .onboarding-prompt { font-size: 0.875rem; color: var(--ink-soft); margin: 0; }
@@ -278,7 +308,12 @@ export class ListComponent {
 
   trackById(_: number, row: ListRow) { return row.id; }
 
+  // The skipped lines behind "N lines skipped", shown on request (the first REPORT_CAP of them).
+  protected readonly REPORT_CAP = 50;
+  readonly showReport = signal(false);
+
   dismissReport(): void {
+    this.showReport.set(false);
     this.store.importStatus.set({ kind: 'idle' });
   }
 

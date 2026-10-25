@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest';
-import { extractDetails, factLabel } from './person-editor';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { TestBed } from '@angular/core/testing';
+import { extractDetails, factLabel, PersonEditorComponent } from './person-editor';
+import { TreeStore } from '../../core/tree-store/tree.store';
+import { PersistenceService } from '../../core/db/persistence.service';
+import { ExportService } from '../../export/export.service';
 import { GedcomNode, Individual } from '../../core/model/types';
 
 const n = (tag: string, value?: string, children: GedcomNode[] = []): GedcomNode => ({
@@ -67,5 +71,62 @@ describe('extractDetails', () => {
   it('de-duplicates identical details', () => {
     const indi = person(n('EMAIL', 'a@b.com'), n('EMAIL', 'a@b.com'));
     expect(extractDetails(indi)).toHaveLength(1);
+  });
+});
+
+describe('PersonEditorComponent large trims', () => {
+  // P is the child of A + B; A is one of 21 children of GA + GB. Trimming P's ancestors removes A, B, GA, GB and
+  // A's 20 siblings (24 people); `siblings` controls how many there are.
+  function setup(siblings: number) {
+    const exportFn = vi.fn(async () => 'ged' as const);
+    TestBed.configureTestingModule({
+      imports: [PersonEditorComponent],
+      providers: [
+        { provide: PersistenceService, useValue: { scheduleWrite: vi.fn(), estimateQuota: vi.fn(async () => null) } },
+        { provide: ExportService, useValue: { export: exportFn } },
+      ],
+    });
+    const store = TestBed.inject(TreeStore);
+    store.setTreeId('trim-test');
+    const sibs = Array.from({ length: siblings }, (_, i) => `S${i}`);
+    const ids = ['P', 'A', 'B', 'GA', 'GB', ...sibs];
+    store.setIndividuals(ids.map((id) => ({ id, names: [{ full: id }], events: [], unions: [], mediaIds: [], notes: [] })));
+    store.setUnions([
+      { id: 'U0', spouseIds: ['A', 'B'], events: [], childLinks: [{ childId: 'P', citations: [], notes: [] }] },
+      { id: 'U1', spouseIds: ['GA', 'GB'], events: [], childLinks: ['A', ...sibs].map((childId) => ({ childId, citations: [], notes: [] })) },
+    ]);
+    const f = TestBed.createComponent(PersonEditorComponent);
+    f.componentInstance.open('P');
+    f.detectChanges();
+    const c = f.componentInstance;
+    c.confirmingTrim.set(c.trimOptions().find((o) => o.side === 'ancestors')!);
+    f.detectChanges();
+    const text = () => (f.nativeElement as HTMLElement).textContent!.replace(/\s+/g, ' ');
+    const button = (label: string) => [...(f.nativeElement as HTMLElement).querySelectorAll('button')].find((b) => b.textContent!.trim() === label);
+    return { f, exportFn, text, button };
+  }
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('a large trim asks for a backup and names the count on the button', () => {
+    const { text, button } = setup(20);
+    expect(text()).toContain('Download a backup first?');
+    expect(button('Delete 24 people')).toBeDefined();
+    expect(button('Download backup')).toBeDefined();
+  });
+
+  it('Download backup calls export once and says so', async () => {
+    const { f, exportFn, text, button } = setup(20);
+    button('Download backup')!.click();
+    await f.whenStable();
+    f.detectChanges();
+    expect(exportFn).toHaveBeenCalledTimes(1);
+    expect(text()).toContain('Backup downloaded');
+  });
+
+  it('a small trim keeps the short confirm', () => {
+    const { text, button } = setup(0);
+    expect(text()).toContain('Trim ancestors: delete 4 people permanently?');
+    expect(button('Download backup')).toBeUndefined();
+    expect(button('Trim')).toBeDefined();
   });
 });

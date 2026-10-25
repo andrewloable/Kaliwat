@@ -49,21 +49,24 @@ test.describe('Tree UI + GEDZIP photos', () => {
     await expect(page.locator('.card-node.focus-node')).toHaveCount(1);
   });
 
-  test('pan/zoom + recenter work in tree view', async ({ page }) => {
+  test('the tree opens centred on the focused person, and Recenter returns to them after a pan', async ({ page }) => {
     await importAndGoToTree(page);
 
-    // Pan the chart by dragging
+    // How far the focused card's centre is from the canvas centre, in pixels.
+    const offset = async () => {
+      const f = (await page.locator('.card-node.focus-node').boundingBox())!;
+      const s = (await page.locator('.tree-svg').boundingBox())!;
+      return [f.x + f.width / 2 - (s.x + s.width / 2), f.y + f.height / 2 - (s.y + s.height / 2)].map((v) => Math.abs(v));
+    };
+    await expect.poll(async () => Math.max(...(await offset()))).toBeLessThan(3);
+
+    // Pan the chart by dragging: the focused card moves away from the centre.
     const svg = page.locator('.tree-svg');
     await svg.dragTo(svg, { sourcePosition: { x: 300, y: 300 }, targetPosition: { x: 100, y: 100 } });
+    expect(Math.max(...(await offset()))).toBeGreaterThan(100);
 
-    // Click recenter
     await page.locator('.recenter-btn').click();
-
-    // After recenter, chart layer transform resets to translate(40,40)
-    await page.waitForTimeout(200);
-    const chartLayer = page.locator('g[transform]').first();
-    const transform = await chartLayer.getAttribute('transform');
-    expect(transform).toContain('translate(40,40)');
+    await expect.poll(async () => Math.max(...(await offset()))).toBeLessThan(3);
   });
 
   test('full tree renders without crashing; union nodes for spouses', async ({ page }) => {

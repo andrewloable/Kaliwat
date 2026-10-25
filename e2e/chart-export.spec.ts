@@ -79,7 +79,7 @@ test('chart exports as a self-contained SVG and a high-resolution JPG', async ({
   await expect(page.getByText('Open the Tree view to export the chart.')).toBeVisible();
   await expect(page.getByRole('button', { name: /^SVG/ })).toBeDisabled();
   await page.keyboard.press('Escape');
-  await page.mouse.click(5, 300);
+  await expect(page.getByRole('group', { name: 'Export options' })).toBeHidden();
 
   await page.getByRole('tab', { name: 'Tree' }).click();
   // the Full tree is the only view; Maria ⚭ Jose → Ana, Carlos

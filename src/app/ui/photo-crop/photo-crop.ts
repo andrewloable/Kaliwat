@@ -1,4 +1,5 @@
-import { Component, OnDestroy, OnInit, input, output, signal, ChangeDetectionStrategy } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, OnDestroy, OnInit, input, output, signal, viewChild, ChangeDetectionStrategy } from '@angular/core';
+import { trapModal } from '../dialog/modal-keys';
 import {
   CROP_MAX_ZOOM, CROP_OUT, CROP_VIEW, clampOffset, coverScale, cropSource, zoomAt,
 } from './crop-math';
@@ -14,7 +15,7 @@ const QUALITY = 0.85;
   selector: 'app-photo-crop',
   template: `
     <div class="crop-backdrop" (click)="cancelled.emit()" aria-hidden="true"></div>
-    <div class="crop-dialog" role="dialog" aria-modal="true" aria-labelledby="crop-title">
+    <div #dialog class="crop-dialog" role="dialog" aria-modal="true" aria-labelledby="crop-title">
       <h2 id="crop-title">Adjust photo</h2>
       @if (error()) {
         <p class="crop-error" role="alert">{{ error() }}</p>
@@ -82,7 +83,10 @@ const QUALITY = 0.85;
     }
   `],
 })
-export class PhotoCropComponent implements OnInit, OnDestroy {
+export class PhotoCropComponent implements OnInit, AfterViewInit, OnDestroy {
+  private readonly dialog = viewChild<ElementRef<HTMLElement>>('dialog');
+  // Focus moves into the crop, Tab stays inside, Escape cancels it (and only it: the editor below keeps its keys).
+  private releaseModal?: () => void;
   readonly file = input.required<Blob>();
   readonly done = output<Blob>();
   readonly cancelled = output<void>();
@@ -125,7 +129,13 @@ export class PhotoCropComponent implements OnInit, OnDestroy {
     }
   }
 
+  ngAfterViewInit(): void {
+    const el = this.dialog()?.nativeElement;
+    if (el) this.releaseModal = trapModal(el, () => this.cancelled.emit());
+  }
+
   ngOnDestroy(): void {
+    this.releaseModal?.();
     const u = this.url();
     if (u) URL.revokeObjectURL(u);
   }
