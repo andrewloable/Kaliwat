@@ -7,6 +7,7 @@ import { select } from 'd3-selection';
 import { zoom, ZoomBehavior, zoomIdentity } from 'd3-zoom';
 import { TreeStore } from '../../core/tree-store/tree.store';
 import { buildCompleteLayout, CARD_W, CARD_H, LayoutNode, LayoutEdge } from '../../layout/pedigree-layout';
+import { buildWholeLayout } from '../../layout/whole-layout';
 import { Individual } from '../../core/model/types';
 import { MediaService } from '../../media/media.service';
 import { SearchService } from '../../core/search/search.service';
@@ -101,15 +102,20 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
     const focusId = this.focusId();
     const individuals = this.store.individuals();
     const unions = this.store.unions();
-    if (!focusId || individuals.length === 0) return { nodes: [] as LayoutNode[], edges: [] as LayoutEdge[] };
+    if (individuals.length === 0) return { nodes: [] as LayoutNode[], edges: [] as LayoutEdge[] };
     const iMap = new Map(individuals.map(i => [i.id, i]));
     const uMap = new Map(unions.map(u => [u.id, u]));
     const orientation = this.familyOrientation();
+    // Everyone: the whole tree, the same whoever is selected (the selection is only highlighted and centred).
+    if (this.treeScope() === 'everyone') return buildWholeLayout(iMap, uMap, focusId, orientation !== 'horizontal');
+    if (!focusId) return { nodes: [] as LayoutNode[], edges: [] as LayoutEdge[] };
     const vertical = orientation === 'vertical';
     const compact = orientation === 'compact' ? this.compactRows() : false;
     return buildCompleteLayout(focusId, iMap, uMap, undefined, vertical, compact);
   });
 
+  /** Who is drawn: everyone in the tree (default), or the selected person's ancestors and descendants. */
+  readonly treeScope = signal<'everyone' | 'line'>('everyone');
   /** Family view direction: generations left→right (default) or top→bottom. */
   readonly familyOrientation = signal<'horizontal' | 'vertical' | 'compact'>('horizontal');
   /** Compact view: how many generations run top to bottom before the cascade starts. */
@@ -123,10 +129,20 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
     return typeof matchMedia === 'function' && !matchMedia('(min-width: 601px)').matches;
   }
 
+  /** Everyone or one person's line. Compact belongs to one person's line, so Everyone shows it top to bottom. */
+  chooseScope(s: 'everyone' | 'line'): void {
+    this.treeScope.set(s);
+    if (s === 'everyone' && this.familyOrientation() === 'compact') this.familyOrientation.set('vertical');
+    this.closeViewOptions();
+    afterNextRender(() => this.centerOnFocus(), { injector: this.injector });
+  }
+
   /** Pick a layout; on phones the popover closes, except for Compact, whose Rows setting is in it. */
   chooseOrientation(o: 'horizontal' | 'vertical' | 'compact'): void {
     this.familyOrientation.set(o);
     if (o !== 'compact') this.closeViewOptions();
+    // The drawing changes shape: bring the selected person back into view.
+    afterNextRender(() => this.centerOnFocus(), { injector: this.injector });
   }
 
   /** Close the phone popover (wide screens keep the choices in the row). Escape returns focus to its button. */
@@ -223,9 +239,20 @@ export class TreeViewComponent implements AfterViewInit, OnDestroy {
   setFocus(id: string): void { this.focusId.set(id); }
 
   edgePath(e: LayoutEdge): string {
+    if (e.arc) {
+      // partners whose cards are apart: bow into the gap above the row (or left of the column)
+      return e.vertical
+        ? `M${e.x1},${e.y1} C${e.x1},${e.y1 - 28} ${e.x2},${e.y2 - 28} ${e.x2},${e.y2}`
+        : `M${e.x1},${e.y1} C${e.x1 - 28},${e.y1} ${e.x2 - 28},${e.y2} ${e.x2},${e.y2}`;
+    }
     if (e.ladder) {
       // down the spine beside the parent, then straight across into the child
       return `M${e.x1},${e.y1} V${e.y2} H${e.x2}`;
+    }
+    if (e.elbow && !e.vertical) {
+      // left to right: across from the parents, down or up at the halfway line, across into the child
+      const mx = (e.x1 + e.x2) / 2;
+      return `M${e.x1},${e.y1} H${mx} V${e.y2} H${e.x2}`;
     }
     if (e.elbow) {
       // straight segments: down from the parent, across at the halfway line, down to the child

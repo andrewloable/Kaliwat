@@ -28,6 +28,7 @@ export interface LayoutEdge {
   elbow?: boolean;        // drawn as straight segments (down, across, down) rather than a curve
   sideBySide?: boolean;   // partners in the same row: a straight line across
   ladder?: boolean;       // a cascade link: down a spine beside the parent, then straight into the child
+  arc?: boolean;          // partners whose cards are apart: a dashed bow through the gap beside their row
 }
 
 export interface LayoutData {

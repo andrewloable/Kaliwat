@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { buildLayout, buildCompleteLayout, CARD_W, CARD_H, LayoutNode, COMPACT_INDENT } from './pedigree-layout';
 import { Individual, Union, UUID } from '../core/model/types';
+import { buildWholeLayout } from './whole-layout';
+import { generations } from '../core/relate/relate';
+import { parseGedcomBytes } from '../gedcom/parser/gedcom-parser';
+import { normalizeAst } from '../gedcom/normalize/normalizer';
 
 function makeIndi(id: UUID, given: string, unions: UUID[] = []): Individual {
   return {
@@ -419,3 +423,135 @@ function expectNoOverlap(nodes: LayoutNode[]): void {
     }
   }
 }
+
+describe('whole-layout', () => {
+  async function sample(): Promise<{ iMap: Map<UUID, Individual>; uMap: Map<UUID, Union> }> {
+    // @ts-expect-error node built-in: the project has no node types, the test runner still provides it
+    const fs = await import('node:fs');
+    const { model } = normalizeAst(parseGedcomBytes(new Uint8Array(fs.readFileSync('test/fixtures/sample-anon.ged'))).ast);
+    return { iMap: model.individuals, uMap: model.unions };
+  }
+  /** Pairs of cards that overlap, found through a grid of card-sized cells. */
+  function overlaps(nodes: LayoutNode[]): string[] {
+    const cells = new Map<string, LayoutNode[]>();
+    for (const n of nodes) {
+      const key = `${Math.floor(n.x / CARD_W)},${Math.floor(n.y / CARD_H)}`;
+      cells.set(key, [...(cells.get(key) ?? []), n]);
+    }
+    const out: string[] = [];
+    for (const n of nodes) {
+      const cx = Math.floor(n.x / CARD_W), cy = Math.floor(n.y / CARD_H);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        for (const m of cells.get(`${cx + dx},${cy + dy}`) ?? []) {
+          if (m.id <= n.id) continue;
+          if (Math.abs(m.x - n.x) < CARD_W && Math.abs(m.y - n.y) < CARD_H) out.push(`${n.id}/${m.id}`);
+        }
+      }
+    }
+    return out;
+  }
+  const family = () => {
+    const a = makeIndi('A', 'Ana', ['U1']), b = makeIndi('B', 'Ben', ['U1']), c = makeIndi('C', 'Cara'), d = makeIndi('D', 'Dino');
+    return { iMap: new Map([a, b, c, d].map((p) => [p.id, p])), uMap: new Map([['U1', makeUnion('U1', ['A', 'B'], ['C', 'D'])]]) };
+  };
+
+  it('everyone: every person appears exactly once', async () => {
+    const { iMap, uMap } = await sample();
+    const { nodes } = buildWholeLayout(iMap, uMap, null, true);
+    expect(nodes).toHaveLength(1771);
+    expect(new Set(nodes.map((n) => n.id)).size).toBe(1771);
+  });
+
+  it('everyone: no two cards overlap, top to bottom and left to right', async () => {
+    const { iMap, uMap } = await sample();
+    expect(overlaps(buildWholeLayout(iMap, uMap, null, true).nodes)).toEqual([]);
+    expect(overlaps(buildWholeLayout(iMap, uMap, null, false).nodes)).toEqual([]);
+  });
+
+  it('everyone: generations line up, children after their parents', async () => {
+    const { iMap, uMap } = await sample();
+    const gen = generations([...iMap.values()], [...uMap.values()]);
+    for (const [vertical, axis] of [[true, 'y'], [false, 'x']] as const) {
+      const at = new Map(buildWholeLayout(iMap, uMap, null, vertical).nodes.map((n) => [n.id, n[axis]]));
+      const byGen = new Map<number, Set<number>>();
+      for (const [id, v] of at) byGen.set(gen.get(id)!, (byGen.get(gen.get(id)!) ?? new Set()).add(v));
+      for (const values of byGen.values()) expect(values.size).toBe(1);
+      for (const u of uMap.values()) for (const s of u.spouseIds) for (const c of u.childLinks) {
+        if (gen.get(c.childId) === gen.get(s)! + 1) expect(at.get(c.childId)!).toBeGreaterThan(at.get(s)!);
+      }
+    }
+  });
+
+  it('everyone: spouses sit side by side and the children hang from the couple', () => {
+    const { iMap, uMap } = family();
+    const { nodes, edges } = buildWholeLayout(iMap, uMap, null, true);
+    const at = (id: string) => nodes.find((n) => n.id === id)!;
+    expect(at('A').y).toBe(at('B').y);
+    const [left, right] = [at('A'), at('B')].sort((p, q) => p.x - q.x);
+    expect(right.x - left.x).toBe(CARD_W + 40);
+    expect(edges.filter((e) => e.spouse && e.sideBySide)).toHaveLength(1);
+    const mid = (left.x + CARD_W + right.x) / 2;
+    for (const c of ['C', 'D']) {
+      const e = edges.find((x) => x.targetId === c && x.elbow)!;
+      expect(e.x1).toBe(mid);
+      expect(e.x2).toBe(at(c).x + CARD_W / 2);
+      expect(at(c).y).toBeGreaterThan(at('A').y);
+    }
+    expect(new Set(edges.map((e) => e.id)).size).toBe(edges.length);
+  });
+
+  it('everyone: unconnected groups are drawn too, the larger one first', () => {
+    const p = makeIndi('P', 'Pia', ['F1']), q = makeIndi('Q', 'Quin', ['F1']), r = makeIndi('R', 'Rex');
+    const s = makeIndi('S', 'Sol', ['F2']), t = makeIndi('T', 'Tess', ['F2']);
+    const iMap = new Map([s, t, p, q, r].map((x) => [x.id, x]));
+    const uMap = new Map([['F1', makeUnion('F1', ['P', 'Q'], ['R'])], ['F2', makeUnion('F2', ['S', 'T'], [])]]);
+    const { nodes } = buildWholeLayout(iMap, uMap, null, true);
+    expect(nodes.map((n) => n.id).sort()).toEqual(['P', 'Q', 'R', 'S', 'T']);
+    const box = (ids: string[]) => {
+      const ns = nodes.filter((n) => ids.includes(n.id));
+      return { min: Math.min(...ns.map((n) => n.x)), max: Math.max(...ns.map((n) => n.x + CARD_W)) };
+    };
+    const big = box(['P', 'Q', 'R']), small = box(['S', 'T']);
+    expect(big.max).toBeLessThan(small.min);
+  });
+
+  it('everyone: independent of the selected person', async () => {
+    const { iMap, uMap } = await sample();
+    const ids = [...iMap.keys()];
+    const place = (focus: string | null) => buildWholeLayout(iMap, uMap, focus, true).nodes.map((n) => `${n.id}:${n.x},${n.y}`);
+    const none = place(null);
+    expect(place(ids[0])).toEqual(none);
+    expect(place(ids[900])).toEqual(none);
+    // Everyone of the oldest generation, where a "selected person's family first" ordering would show.
+    const gen = generations([...iMap.values()], [...uMap.values()]);
+    for (const id of ids.filter((x) => gen.get(x) === 1)) expect(place(id)).toEqual(none);
+    const withFocus = buildWholeLayout(iMap, uMap, ids[900], true).nodes;
+    expect(withFocus.filter((n) => n.isFocus).map((n) => n.id)).toEqual([ids[900]]);
+  });
+
+  it('everyone: fast enough for the bundled 1771-person tree', async () => {
+    const { iMap, uMap } = await sample();
+    const t0 = performance.now();
+    buildWholeLayout(iMap, uMap, null, true);
+    buildWholeLayout(iMap, uMap, null, false);
+    expect((performance.now() - t0) / 2).toBeLessThan(1000);
+  });
+});
+
+describe('whole-layout marriages between families', () => {
+  it('partners placed apart are joined by a bow, not a line behind other cards', () => {
+    // Two families; A (child of the first) marries B (child of the second): both have parents, so they sit apart.
+    const ids = ['P1', 'Q1', 'A', 'P2', 'Q2', 'B'];
+    const iMap = new Map(ids.map((id) => [id, makeIndi(id, id, id === 'A' || id === 'B' ? ['AB'] : [id.endsWith('1') ? 'F1' : 'F2'])]));
+    const uMap = new Map([
+      ['F1', makeUnion('F1', ['P1', 'Q1'], ['A'])], ['F2', makeUnion('F2', ['P2', 'Q2'], ['B'])], ['AB', makeUnion('AB', ['A', 'B'], [])],
+    ]);
+    const { nodes, edges } = buildWholeLayout(iMap, uMap, null, true);
+    const at = (id: string) => nodes.find((n) => n.id === id)!;
+    const e = edges.find((x) => x.id === 'AB-spouses')!;
+    expect(e).toMatchObject({ spouse: true, arc: true });
+    const [l, r] = [at('A'), at('B')].sort((p, q) => p.x - q.x);
+    expect([e.x1, e.y1, e.x2, e.y2]).toEqual([l.x + CARD_W / 2, l.y, r.x + CARD_W / 2, r.y]);
+    expect(edges.filter((x) => x.sideBySide).map((x) => x.id).sort()).toEqual(['F1-spouses', 'F2-spouses']);
+  });
+});

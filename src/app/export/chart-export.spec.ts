@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planTiles, substituteVars, rasterScale, RASTER_LIMITS } from './chart-export';
+import { planTiles, substituteVars, rasterScale, RASTER_LIMITS, inWindow } from './chart-export';
 
 // A4 printable area in pt, roughly (595x842 minus 24pt margins each side).
 const A4_W = 547;
@@ -74,5 +74,19 @@ describe('rasterScale', () => {
     const s = rasterScale(2566, 5312, lim);
     expect(2566 * s * 5312 * s).toBeLessThanOrEqual(lim.area + 1);
     expect(5312 * s).toBeLessThanOrEqual(lim.side);
+  });
+});
+
+describe('inWindow', () => {
+  const win = { x: 100, y: 100, width: 200, height: 100 };
+  it('a piece inside or overlapping the page window shows on that page', () => {
+    expect(inWindow({ x: 150, y: 120, width: 20, height: 20 }, win)).toBe(true);
+    expect(inWindow({ x: 50, y: 50, width: 60, height: 60 }, win)).toBe(true); // crosses the corner
+    expect(inWindow({ x: 0, y: 0, width: 1000, height: 1000 }, win)).toBe(true); // covers the window
+  });
+  it('a piece outside the window, or only touching its edge, does not', () => {
+    expect(inWindow({ x: 400, y: 120, width: 20, height: 20 }, win)).toBe(false);
+    expect(inWindow({ x: 300, y: 120, width: 20, height: 20 }, win)).toBe(false); // touches the right edge
+    expect(inWindow({ x: 150, y: 0, width: 20, height: 100 }, win)).toBe(false); // touches the top edge
   });
 });

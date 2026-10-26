@@ -15,6 +15,8 @@ test('Full tree switches between left→right, top→bottom and compact', async 
   await page.setInputFiles('input[aria-label="Import a GEDCOM file"]', 'public/sample.ged');
   await expect(page.locator('.list-row').first()).toBeVisible({ timeout: 30_000 });
   await page.getByRole('tab', { name: 'Tree' }).click();
+  // These directions belong to one person's line (Everyone is the default; e2e/tree-everyone.spec.ts covers it).
+  await page.getByRole('button', { name: "One person's line" }).click();
 
   // Focus on Maria so her child Ana is in view.
   await page.getByRole('searchbox', { name: 'Search people' }).fill('Maria Santos');

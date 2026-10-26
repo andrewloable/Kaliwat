@@ -8,14 +8,23 @@
           <span class="btn-label">View options</span>
         </summary>
         <div class="options-panel">
+          <button class="mode-btn scope-btn" [class.active]="treeScope() === 'everyone'"
+            [attr.aria-pressed]="treeScope() === 'everyone'" (click)="chooseScope('everyone')"
+            title="Everyone in the tree">Everyone</button>
+          <button class="mode-btn scope-btn" [class.active]="treeScope() === 'line'"
+            [attr.aria-pressed]="treeScope() === 'line'" (click)="chooseScope('line')"
+            title="The selected person's ancestors and descendants">One person's line</button>
+          <span class="options-sep" aria-hidden="true"></span>
           <button class="mode-btn orient-btn" [class.active]="familyOrientation() === 'horizontal'"
             [attr.aria-pressed]="familyOrientation() === 'horizontal'" (click)="chooseOrientation('horizontal')">→ Left to right</button>
           <button class="mode-btn orient-btn" [class.active]="familyOrientation() === 'vertical'"
             [attr.aria-pressed]="familyOrientation() === 'vertical'" (click)="chooseOrientation('vertical')">↓ Top to bottom</button>
-          <button class="mode-btn orient-btn" [class.active]="familyOrientation() === 'compact'"
-            [attr.aria-pressed]="familyOrientation() === 'compact'" (click)="chooseOrientation('compact')"
-            title="Top-to-bottom generations, then a waterfall of descendants">▦ Compact</button>
-          @if (familyOrientation() === 'compact') {
+          @if (treeScope() === 'line') {
+            <button class="mode-btn orient-btn" [class.active]="familyOrientation() === 'compact'"
+              [attr.aria-pressed]="familyOrientation() === 'compact'" (click)="chooseOrientation('compact')"
+              title="Top-to-bottom generations, then a waterfall of descendants">▦ Compact</button>
+          }
+          @if (treeScope() === 'line' && familyOrientation() === 'compact') {
             <label class="rows-setting">Rows
               <select aria-label="Generations top to bottom" (change)="compactRows.set(+$any($event.target).value); closeViewOptions()">
                 @for (n of [1, 2, 3, 4, 5, 6]; track n) {
@@ -60,8 +69,8 @@
     <g #chartLayer>
         @for (edge of layout().edges; track edge.id) {
           <path class="tree-edge" [attr.d]="edgePath(edge)"
-            fill="none" stroke="var(--ink-soft)" stroke-width="1.6"/>
-          @if (edge.spouse) {
+            fill="none" stroke="var(--ink-soft)" stroke-width="1.6" [attr.stroke-dasharray]="edge.arc ? '5 4' : null"/>
+          @if (edge.spouse && !edge.arc) {
             <circle class="union-node" [attr.cx]="(edge.x1 + edge.x2) / 2" [attr.cy]="(edge.y1 + edge.y2) / 2" r="11"
               fill="var(--paper-2)" stroke="var(--accent)" stroke-width="1.5"/>
             <text [attr.x]="(edge.x1 + edge.x2) / 2" [attr.y]="(edge.y1 + edge.y2) / 2"

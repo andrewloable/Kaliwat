@@ -87,6 +87,8 @@
 .view-options:not([open]) > summary { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--ink-soft); }
 // Its own flex row: Chrome wraps details content in an internal box, so the toolbar's gap would not reach the buttons.
 .options-panel { display: flex; align-items: center; gap: 0.5rem; }
+// Between who is drawn (Everyone / One person's line) and the direction buttons.
+.options-sep { align-self: stretch; width: 1px; margin: 0.15rem 0.25rem; background: var(--line); }
 .btn-icon { display: none; }
 
 
@@ -127,6 +129,7 @@
   }
   .view-options:not([open]) > .options-panel { display: none; }
   .options-panel .mode-btn { min-height: 44px; text-align: left; font-size: 1rem; }
+  .options-sep { width: auto; height: 1px; margin: 0.15rem 0; }
   .rows-setting { min-height: 44px; display: flex; align-items: center; gap: 0.5rem; }
   .recenter-btn {
     display: inline-flex; align-items: center; justify-content: center;

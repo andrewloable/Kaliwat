@@ -65,6 +65,13 @@ function inlineCssVars(root: SVGGElement): void {
 
 const svgNS = 'http://www.w3.org/2000/svg';
 
+export interface Box { x: number; y: number; width: number; height: number }
+
+/** Whether a piece of the drawing shows inside a page's window (sharing only an edge does not count). */
+export function inWindow(box: Box, win: Box): boolean {
+  return box.x < win.x + win.width && box.x + box.width > win.x && box.y < win.y + win.height && box.y + box.height > win.y;
+}
+
 /** A print-ready copy of the chart layer: no zoom/pan, no ✎ pencils, literal colours. */
 function printableClone(layer: SVGGElement): SVGGElement {
   const clone = layer.cloneNode(true) as SVGGElement;
@@ -117,11 +124,24 @@ export async function exportTreePdf(layer: SVGGElement, pageSize: PageFormat): P
     host.setAttribute('width', `${cw}`);
     host.setAttribute('height', `${ch}`);
 
+    // Each page gets only the pieces (cards, connectors, ⚭ markers) that show on it: rendering the whole
+    // drawing on every page made a 1771-person tree take 100 s and 184 MB. A piece crossing a page edge is on
+    // both pages, so the pages still join up. Boxes are measured once, with a card's own translate added.
+    const pieces = Array.from(clone.children).map((el) => {
+      const b = (el as SVGGraphicsElement).getBBox();
+      const m = (el as SVGGraphicsElement).transform?.baseVal.consolidate()?.matrix;
+      return { el, box: { x: b.x + (m?.e ?? 0), y: b.y + (m?.f ?? 0), width: b.width, height: b.height } };
+    });
+    const page = document.createElementNS(svgNS, 'g');
+    host.replaceChildren(page);
+
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         if (r || c) pdf.addPage(pageSize, orientation);
         const vx = offX + c * winW;
         const vy = offY + r * winH;
+        const win = { x: vx, y: vy, width: winW, height: winH };
+        page.replaceChildren(...pieces.filter((p) => inWindow(p.box, win)).map((p) => p.el.cloneNode(true)));
         host.setAttribute('viewBox', `${vx} ${vy} ${winW} ${winH}`);
         await svg2pdf(host, pdf, { x: MARGIN, y: MARGIN, width: cw, height: ch });
       }

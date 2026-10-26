@@ -51,6 +51,10 @@ test.describe('phone', () => {
 test('wide screens show the layout buttons in the toolbar row', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openTree(page);
-  for (const name of ['→ Left to right', '↓ Top to bottom', '▦ Compact']) await expect(page.getByRole('button', { name })).toBeVisible();
+  for (const name of ['Everyone', "One person's line", '→ Left to right', '↓ Top to bottom']) await expect(page.getByRole('button', { name })).toBeVisible();
+  // Compact belongs to one person's line.
+  await expect(page.getByRole('button', { name: '▦ Compact' })).toHaveCount(0);
+  await page.getByRole('button', { name: "One person's line" }).click();
+  await expect(page.getByRole('button', { name: '▦ Compact' })).toBeVisible();
   await expect(page.locator('.view-options > summary')).toBeHidden();
 });
