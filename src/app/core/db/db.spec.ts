@@ -71,14 +71,15 @@ describe('BroadcastChannel reload signal', () => {
   it('postMessage on one channel triggers onmessage on another', async () => {
     const sender = new BroadcastChannel('kaliwat');
     const receiver = new BroadcastChannel('kaliwat');
-    const received: unknown[] = [];
-    receiver.onmessage = (e) => received.push(e.data);
-    sender.postMessage({ type: 'changed' });
-    // BroadcastChannel is sync in jsdom — wait a tick
-    await new Promise((r) => setTimeout(r, 0));
-    expect(received.length).toBeGreaterThan(0);
-    sender.close();
-    receiver.close();
+    try {
+      // Delivery is asynchronous and its timing varies (one tick was not enough on a busy CI runner): wait for it.
+      const received = new Promise((resolve) => (receiver.onmessage = (e) => resolve(e.data)));
+      sender.postMessage({ type: 'changed' });
+      expect(await received).toEqual({ type: 'changed' });
+    } finally {
+      sender.close();
+      receiver.close();
+    }
   });
 });
 
