@@ -28,16 +28,38 @@
   </nav>
 
   @if (!store.isEmpty()) {
-    <button class="export-btn" type="button" (click)="compare.open()" title="See how two people are related" aria-label="Compare">
+    <button class="export-btn extra" type="button" (click)="compare.open()" title="See how two people are related" aria-label="Compare">
       <span class="btn-text">Compare</span><span class="btn-icon" aria-hidden="true">⇄</span>
     </button>
+    <!-- Below 360px Compare and Merge do not fit in the bar: they move into this menu. -->
+    <button #moreBtn class="export-btn more-btn" type="button" aria-label="More actions" aria-haspopup="menu"
+      [attr.aria-expanded]="moreOpen()" (click)="toggleMore()">
+      <span class="btn-icon" aria-hidden="true">⋯</span>
+    </button>
+    @if (moreOpen()) {
+      <div class="menu-backdrop" (click)="closeMore()" aria-hidden="true"></div>
+      <div class="more-menu" role="menu" aria-label="More actions">
+        <button #firstMoreItem class="more-item" role="menuitem" type="button" (click)="closeMore(); compare.open()">Compare</button>
+        <button class="more-item" role="menuitem" type="button" (click)="closeMore(); mergeInput.click()">Merge…</button>
+      </div>
+    }
     <button class="export-btn" type="button" (click)="exportMenu.toggle()" title="Download the family file or the chart (PDF, SVG, JPG)"
       aria-label="Export" [attr.aria-expanded]="exportMenu.isOpen()">
       <span class="btn-text">Export</span><span class="btn-icon" aria-hidden="true">⤓</span>
     </button>
+    <button class="export-btn extra" type="button" (click)="mergeInput.click()" title="Add people and photos from another .ged or .gdz file"
+      aria-label="Merge">
+      <span class="btn-text">Merge</span><span class="btn-icon" aria-hidden="true">⊕</span>
+    </button>
+    <input #mergeInput type="file" accept=".ged,.gdz" hidden (change)="onMerge($event, merge)" aria-label="Merge a GEDCOM file into this tree" />
   }
-  <button class="import-btn" type="button" (click)="importInput.click()">Import</button>
+  <!-- With a tree open, phones show Import as an icon too, so the Merge button fits. -->
+  <button class="import-btn" [class.compact]="!store.isEmpty()" type="button" (click)="importInput.click()" aria-label="Import"
+    title="Open a .ged or .gdz file as a new tree">
+    <span class="btn-text">Import</span>@if (!store.isEmpty()) {<span class="btn-icon" aria-hidden="true">⤒</span>}
+  </button>
   <input #importInput type="file" accept=".ged,.gdz" hidden (change)="onImport($event)" aria-label="Import a GEDCOM file" />
 </header>
 <app-compare #compare />
+<app-merge #merge />
 <app-export-menu #exportMenu />

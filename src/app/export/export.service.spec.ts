@@ -5,6 +5,7 @@ import { EditService } from '../core/edit/edit.service';
 import { PersistenceService } from '../core/db/persistence.service';
 import { ExportService } from './export.service';
 import { GedcomNode } from '../core/model/types';
+import { MediaService } from '../media/media.service';
 
 function mockPersistence(): Partial<PersistenceService> {
   return {
@@ -98,5 +99,23 @@ describe('ExportService.buildExportAst', () => {
     const fams = childrenWith(dadNode, 'FAMS');
     expect(fams).toContain(unionX);
     expect(fams).not.toContain('@FOLD@');
+  });
+});
+
+describe('ExportService.buildFile', () => {
+  it('downloads linked photos before building the file', async () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: PersistenceService, useValue: mockPersistence() }] });
+    const media = TestBed.inject(MediaService);
+    const order: string[] = [];
+    const download = vi.spyOn(media, 'downloadLinked').mockImplementation(async () => {
+      order.push('download');
+      return { total: 0, done: 0, failed: 0, running: false };
+    });
+    TestBed.inject(TreeStore).setTreeId('export-links');
+    await TestBed.inject(ExportService).buildFile();
+    order.push('built');
+    expect(download).toHaveBeenCalledWith('export-links');
+    expect(order).toEqual(['download', 'built']);
   });
 });

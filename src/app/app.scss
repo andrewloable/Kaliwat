@@ -1,6 +1,7 @@
 .app-footer {
   height: var(--footer-h);
   display: flex; align-items: center; justify-content: center; gap: 0.4rem;
+  white-space: nowrap;
   border-top: 1px solid var(--line);
   font-size: 0.75rem; color: var(--ink-soft);
 }
@@ -12,4 +13,9 @@
   display: inline-flex; align-items: center;
   background: none; border: none; cursor: pointer;
   color: var(--accent); text-decoration: underline; font-size: inherit;
+}
+
+// Shrinks with an ellipsis on narrow phones rather than widening the page.
+.photo-status {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
 }

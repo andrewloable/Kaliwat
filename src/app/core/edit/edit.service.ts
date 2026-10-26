@@ -589,7 +589,9 @@ export class EditService {
     }
     if (indi.rawRef) {
       if (oldMeta?.data?.file) indi.rawRef.children = indi.rawRef.children.filter((c) => !isObjeFor(c, oldMeta.data.file!));
-      indi.rawRef.children.push(objeNode);
+      // First among the photos: the file keeps OBJE order, and the first OBJE is the profile picture after export.
+      const first = indi.rawRef.children.findIndex((c) => c.tag === 'OBJE');
+      indi.rawRef.children.splice(first < 0 ? indi.rawRef.children.length : first, 0, objeNode);
     }
     this.store.upsertIndividual({ ...indi, mediaIds: [mediaId, ...indi.mediaIds.filter((m) => m !== oldId)] });
     this._scheduleWrite();

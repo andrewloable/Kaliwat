@@ -11,4 +11,19 @@
     <span aria-hidden="true">·</span>
     <button type="button" class="footer-link" (click)="orphans.open()">{{ orphans.total() ? orphans.total() + ' not connected' : 'All connected' }}</button>
   }
+  <!-- Photo links are downloaded into this browser after an import or merge, and before an export. -->
+  @if (media.linkDownload(); as d) {
+    @if (d.running) {
+      <span aria-hidden="true">·</span>
+      <span class="photo-status" role="status" title="Downloading the photos that are web links, so the tree no longer needs them">
+        Saving photos {{ d.done + d.failed }}/{{ d.total }}
+      </span>
+    } @else if (d.failed) {
+      <span aria-hidden="true">·</span>
+      <span class="photo-status" role="status"
+        title="These photo links no longer work (MyHeritage links expire about a week after export). Export the GEDCOM from MyHeritage again and import or merge it soon after.">
+        {{ d.failed }} {{ d.failed === 1 ? 'photo' : 'photos' }} not downloaded
+      </span>
+    }
+  }
 </footer>

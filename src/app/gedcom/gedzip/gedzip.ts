@@ -43,8 +43,11 @@ export async function makeThumbnail(blob: Blob): Promise<Blob | null> {
   }
 }
 
-/** Parses a .gdz archive and returns the embedded GEDCOM bytes + extracted media. */
-export async function importGedzip(file: File | Blob): Promise<GedzipImportResult | { error: string }> {
+/** Parses a .gdz archive and returns the embedded GEDCOM bytes + extracted media. `onProgress` follows the photos. */
+export async function importGedzip(
+  file: File | Blob,
+  onProgress?: (done: number, total: number) => void,
+): Promise<GedzipImportResult | { error: string }> {
   if (file.size > MAX_GDZ_BYTES) {
     return { error: `Archive too large (${Math.round(file.size / 1e6)} MB, max ${MAX_GDZ_BYTES / 1e6} MB)` };
   }
@@ -62,9 +65,9 @@ export async function importGedzip(file: File | Blob): Promise<GedzipImportResul
   const media: MediaEntry[] = [];
   const skipped: { path: string; reason: string }[] = [];
 
-  for (const [path, entry] of Object.entries(zip.files)) {
-    if (entry.dir || path === gedEntry) continue;
-    if (!IMAGE_EXT.test(path)) continue;
+  const images = Object.entries(zip.files).filter(([path, entry]) => !entry.dir && path !== gedEntry && IMAGE_EXT.test(path));
+  for (const [i, [path, entry]] of images.entries()) {
+    onProgress?.(i + 1, images.length);
     if (media.length >= MAX_MEDIA_ENTRIES) { skipped.push({ path, reason: 'Entry limit reached' }); continue; }
 
     const buf = await entry.async('arraybuffer');

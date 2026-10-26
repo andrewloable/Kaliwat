@@ -2,6 +2,19 @@ import { Injectable, OnDestroy, signal, Signal, WritableSignal } from '@angular/
 import { db } from '../core/db/kaliwat-db';
 import { makeThumbnail } from '../gedcom/gedzip/gedzip';
 
+const MIN_ID = '';
+const MAX_ID = '￿';
+const WEB = /^https?:\/\//i;
+const PARALLEL = 4;
+
+/** Progress of downloading a tree's linked photos into this browser. */
+export interface LinkDownload {
+  total: number; // links to download
+  done: number;
+  failed: number;
+  running: boolean;
+}
+
 /**
  * Manages photo Blobs and their Object URLs.
  * URLs are created lazily on request and revoked in bulk when the service
@@ -13,6 +26,13 @@ export class MediaService implements OnDestroy {
   private readonly urls = new Map<string, string>(); // mediaId → objectURL
   private readonly avatarSignals = new Map<string, WritableSignal<string | null>>();
   private readonly nullAvatar = signal<string | null>(null);
+  private readonly inFlight = new Map<string, Promise<Blob | null>>(); // URL → its download
+  private readonly deadLinks = new Set<string>(); // links that failed this session
+  private running: Promise<LinkDownload> | null = null;
+  private again = false;
+
+  /** The latest download of linked photos (null until one ran). */
+  readonly linkDownload = signal<LinkDownload | null>(null);
 
   /**
    * A person's primary photo as a signal of a local object URL (null until
@@ -20,8 +40,6 @@ export class MediaService implements OnDestroy {
    * the remote OBJE URL once (CORS-permitting), thumbnail it, store the blob,
    * then serve from that local blob. The view only ever renders a blob: URL —
    * never a remote <img> — so display stays offline and within img-src.
-   * Fetch is lazy (on first view), so a 2000-person tree only pulls the photos
-   * actually looked at.
    */
   avatar(treeId: string | null | undefined, mediaId: string | undefined): Signal<string | null> {
     if (!treeId || !mediaId) return this.nullAvatar;
@@ -44,15 +62,92 @@ export class MediaService implements OnDestroy {
 
     const meta = await db.mediaMeta.get([treeId, mediaId]);
     const url = meta?.data?.file;
-    if (!url || !/^https?:\/\//i.test(url)) return null;
+    if (!url || !WEB.test(url)) return null;
+    const shown = await this.store(treeId, [mediaId], url);
+    return shown ? this.cacheUrl(`thumb:${mediaId}`, shown) : null;
+  }
 
-    const resp = await fetch(url);
-    if (!resp.ok) return null;
-    const blob = await resp.blob();
-    if (!blob.type.startsWith('image/')) return null;
+  /**
+   * Downloads one photo link and stores the image (and its thumbnail) under every given media id. One request per
+   * URL at a time, however many people or calls want it. Returns the image to show (the thumbnail when there is
+   * one), or null when the link does not give an image.
+   */
+  private async store(treeId: string, mediaIds: string[], url: string): Promise<Blob | null> {
+    if (this.deadLinks.has(url)) return null;
+    let download = this.inFlight.get(url);
+    if (!download) {
+      download = fetch(url, { signal: AbortSignal.timeout(15_000) })
+        .then(async (resp) => {
+          const blob = resp.ok ? await resp.blob() : null;
+          return blob && blob.type.startsWith('image/') ? blob : null;
+        })
+        .catch(() => null)
+        .finally(() => this.inFlight.delete(url));
+      this.inFlight.set(url, download);
+    }
+    const blob = await download;
+    if (!blob) {
+      this.deadLinks.add(url);
+      return null;
+    }
     const thumb = await makeThumbnail(blob).catch(() => null);
-    await db.mediaBlobs.put({ treeId, id: mediaId, blob, ...(thumb ? { thumb } : {}) });
-    return this.cacheUrl(`thumb:${mediaId}`, thumb ?? blob);
+    await db.mediaBlobs.bulkPut(mediaIds.map((id) => ({ treeId, id, blob, ...(thumb ? { thumb } : {}) })));
+    // People already on screen with this photo get it now (their first try may have found no image yet).
+    for (const id of mediaIds) {
+      const sig = this.avatarSignals.get(`${treeId}|${id}`);
+      if (sig && !sig()) sig.set(this.cacheUrl(`thumb:${id}`, thumb ?? blob));
+    }
+    return thumb ?? blob;
+  }
+
+  /**
+   * Downloads every photo of the tree that is only a web link (MyHeritage links expire about a week after export)
+   * and stores the images in this browser, so the tree and its .gdz export no longer need the links.
+   * A call while a download runs makes it look again for new links when it ends.
+   */
+  downloadLinked(treeId: string): Promise<LinkDownload> {
+    if (this.running) {
+      this.again = true;
+      return this.running;
+    }
+    this.running = (async () => {
+      let result: LinkDownload = { total: 0, done: 0, failed: 0, running: false };
+      do {
+        this.again = false;
+        result = await this.downloadOnce(treeId);
+      } while (this.again);
+      return result;
+    })().finally(() => (this.running = null));
+    return this.running;
+  }
+
+  private async downloadOnce(treeId: string): Promise<LinkDownload> {
+    const [metas, keys] = await Promise.all([
+      db.mediaMeta.where('[treeId+id]').between([treeId, MIN_ID], [treeId, MAX_ID]).toArray(),
+      db.mediaBlobs.where('[treeId+id]').between([treeId, MIN_ID], [treeId, MAX_ID]).primaryKeys(),
+    ]);
+    const stored = new Set(keys.map((k) => k[1]));
+    const byUrl = new Map<string, string[]>(); // one download per link, stored for every photo record with it
+    for (const { data: m } of metas) {
+      if (stored.has(m.id) || !m.file || !WEB.test(m.file) || this.deadLinks.has(m.file)) continue;
+      byUrl.set(m.file, [...(byUrl.get(m.file) ?? []), m.id]);
+    }
+    const queue = [...byUrl];
+    const progress: LinkDownload = { total: queue.length, done: 0, failed: 0, running: queue.length > 0 };
+    if (!queue.length) return progress;
+    this.linkDownload.set({ ...progress });
+    const worker = async () => {
+      for (let next = queue.shift(); next; next = queue.shift()) {
+        const ok = await this.store(treeId, next[1], next[0]).catch(() => null);
+        if (ok) progress.done++;
+        else progress.failed++;
+        this.linkDownload.set({ ...progress });
+      }
+    };
+    await Promise.all(Array.from({ length: PARALLEL }, worker));
+    progress.running = false;
+    this.linkDownload.set({ ...progress });
+    return progress;
   }
 
   private cacheUrl(key: string, blob: Blob): string {

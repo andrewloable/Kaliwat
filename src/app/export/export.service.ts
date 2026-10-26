@@ -4,6 +4,7 @@ import { TreeStore } from '../core/tree-store/tree.store';
 import { serializeAst } from '../gedcom/serialize/gedcom-serializer';
 import { exportGedzip } from '../gedcom/gedzip/gedzip';
 import { GedcomNode } from '../core/model/types';
+import { MediaService } from '../media/media.service';
 
 export interface BuiltFile {
   blob: Blob;
@@ -22,6 +23,7 @@ const MAX_ID = '￿';
 @Injectable({ providedIn: 'root' })
 export class ExportService {
   private readonly store = inject(TreeStore);
+  private readonly media = inject(MediaService);
 
   /** The tree view's rendered chart layer while it is on screen (for PDF/SVG/JPG export). */
   readonly chart = signal<SVGGElement | null>(null);
@@ -43,6 +45,9 @@ export class ExportService {
   async buildFile(): Promise<BuiltFile | null> {
     const treeId = this.store.currentTreeId();
     if (!treeId) return null;
+
+    // Images, not web links: download every linked photo first, so the .gdz carries it and points at its own copy.
+    await this.media.downloadLinked(treeId);
 
     const astRec = await db.rawAst.get([treeId, 'root']);
     const nodes: GedcomNode[] = this.buildExportAst(astRec?.nodes);

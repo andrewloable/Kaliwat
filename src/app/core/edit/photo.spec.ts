@@ -75,6 +75,22 @@ describe('EditService photos', () => {
     expect(objeCount(indi.rawRef!.children)).toBe(0);
   });
 
+  it('setPhoto puts the new photo first in the raw record, so it stays the profile picture after export', async () => {
+    const id = service.createIndividual({ given: 'Oscar', surname: 'Nakamura', sex: 'M' });
+    const obje = (file: string) => ({ level: 1, tag: 'OBJE', children: [{ level: 2, tag: 'FILE', value: file, children: [] }] });
+    const indi = store.individuals().find((i) => i.id === id)!;
+    indi.rawRef!.children.push(obje('media/a.jpg'), obje('media/b.jpg'));
+    store.upsertIndividual({ ...indi, mediaIds: ['ma', 'mb'] });
+    await db.mediaMeta.put({ treeId, id: 'ma', data: { id: 'ma', file: 'media/a.jpg', links: [] } });
+
+    await service.setPhoto(id, img());
+    const after = store.individuals().find((i) => i.id === id)!;
+    const files = after.rawRef!.children.filter((c) => c.tag === 'OBJE').map((o) => o.children.find((c) => c.tag === 'FILE')!.value);
+    const primaryFile = (await db.mediaMeta.get([treeId, after.mediaIds[0]]))!.data.file;
+    expect(files).toEqual([primaryFile, 'media/b.jpg']);
+    expect(after.mediaIds.slice(1)).toEqual(['mb']);
+  });
+
   describe('deleting people cleans up their photos', () => {
     const mediaId = (id: string) => store.individuals().find((i) => i.id === id)!.mediaIds[0];
     const blob = (m: string) => db.mediaBlobs.get([treeId, m]);

@@ -1,5 +1,6 @@
 import { Component, ElementRef, HostListener, Injector, afterNextRender, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { ExportService } from '../../export/export.service';
+import { MediaService } from '../../media/media.service';
 import type { PageFormat } from '../../export/chart-export';
 
 type Kind = 'file' | 'pdf' | 'svg' | 'jpg';
@@ -49,7 +50,12 @@ const LABEL: Record<Kind, string> = { file: 'file', pdf: 'PDF', svg: 'SVG', jpg:
         </button>
 
         @if (busy()) {
-          <p class="note" role="status">Exporting {{ busy() }}…</p>
+          <!-- The family file waits for the photo links to be downloaded, so it carries the images. -->
+          @if (busy() === 'file' && media.linkDownload()?.running) {
+            <p class="note" role="status">Downloading photos {{ media.linkDownload()!.done + media.linkDownload()!.failed }} of {{ media.linkDownload()!.total }}…</p>
+          } @else {
+            <p class="note" role="status">Exporting {{ busy() }}…</p>
+          }
         }
         @if (error()) {
           <p class="note error" role="alert">{{ error() }}</p>
@@ -91,6 +97,7 @@ const LABEL: Record<Kind, string> = { file: 'file', pdf: 'PDF', svg: 'SVG', jpg:
 })
 export class ExportMenuComponent {
   protected readonly exportService = inject(ExportService);
+  protected readonly media = inject(MediaService);
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly injector = inject(Injector);
   // The button that opened the menu: Escape and an outside click give focus back to it.

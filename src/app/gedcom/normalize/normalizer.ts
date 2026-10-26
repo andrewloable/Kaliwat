@@ -56,6 +56,26 @@ function parseName(node: GedcomNode): PersonName {
   };
 }
 
+/** A person's names, sex, events and notes, read from their INDI record. */
+export function individualFacts(
+  node: GedcomNode,
+  snoteText: Map<string, string> = new Map(),
+): Pick<Individual, 'names' | 'sex' | 'events' | 'notes'> {
+  const names = childNodes(node, 'NAME').map(parseName);
+  if (names.length === 0) names.push({ full: '' });
+  const sex = childValue(node, 'SEX') ?? 'U';
+  const events = node.children.filter((c) => EVENT_TAGS.has(c.tag)).map(parseEvent);
+  const notes = childNodes(node, 'NOTE').map((n) =>
+    n.value ?? (n.pointer ? (snoteText.get(n.pointer) ?? '') : ''),
+  );
+  return { names, sex, events, notes };
+}
+
+/** A family's events, read from its FAM record. */
+export function unionEvents(node: GedcomNode): GedcomEvent[] {
+  return node.children.filter((c) => c.tag === 'MARR' || c.tag === 'DIV' || EVENT_TAGS.has(c.tag)).map(parseEvent);
+}
+
 function crypto_uuid(): UUID {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -140,16 +160,10 @@ export function normalizeAst(ast: GedcomNode[]): NormalizeResult {
   for (const node of indiNodes) {
     if (!node.xref) continue;
     const id = pt.getUuid(node.xref)!;
-    const names = childNodes(node, 'NAME').map(parseName);
-    if (names.length === 0) names.push({ full: '' });
-    const sex = childValue(node, 'SEX') ?? 'U';
-    const events = node.children.filter((c) => EVENT_TAGS.has(c.tag)).map(parseEvent);
+    const { names, sex, events, notes } = individualFacts(node, snoteText);
     const mediaIds = childNodes(node, 'OBJE')
       .map(objeId)
       .filter((id): id is UUID => id !== undefined);
-    const notes = childNodes(node, 'NOTE').map((n) =>
-      n.value ?? (n.pointer ? (snoteText.get(n.pointer) ?? '') : ''),
-    );
 
     // Validate FAMS/FAMC pointers for orphan detection
     for (const tag of ['FAMS', 'FAMC']) {
@@ -183,7 +197,7 @@ export function normalizeAst(ast: GedcomNode[]): NormalizeResult {
       })
       .filter((c): c is ChildLink => c !== null);
 
-    const events = node.children.filter((c) => c.tag === 'MARR' || c.tag === 'DIV' || EVENT_TAGS.has(c.tag)).map(parseEvent);
+    const events = unionEvents(node);
 
     const union: Union = { id, sourceXref: node.xref, spouseIds, events, childLinks, rawRef: node };
     unions.set(id, union);
